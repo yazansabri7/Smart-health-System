@@ -10,8 +10,17 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@hookform/resolvers": "^6.0.1",
+    "@mui/material": "^9.5.0",
+    "axios": "^1.21.0",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "react-hook-form": "^7.91.0",
+    "react-router": "^8.5.0",
+    "react-router-dom": "^7.18.4",
+    "yup": "^1.7.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
