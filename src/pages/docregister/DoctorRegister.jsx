@@ -1,5 +1,5 @@
 
-import React, { useState } from "react";
+import { useState } from "react";
 import {
   Alert,
   Box,
@@ -26,7 +26,7 @@ import {
 
 import { yupResolver } from "@hookform/resolvers/yup";
 import { Link, useNavigate } from "react-router-dom";
-import axios from "axios";
+import { api } from "../../api/client.js";
 
 import { docregisterSchema } from "../../validations/authSchemas";
 
@@ -227,27 +227,23 @@ export default function DoctorRegister() {
     },
   });
 
-  const onSubmit = async (data) => {
+  async function handleRegisterDoctor(data) {
     setServerError(null);
 
     try {
-      const response = await axios.post(
-        `${import.meta.env.VITE_API_BASE_URL}/Account/RegisterDoctor`,
+      await api.post(
+        "/Account/RegisterDoctor",
         data
       );
 
-      console.log(response);
-
       setSuccess(true);
       setOpenSuccess(true);
-    } catch (err) {
-      console.log(err.response);
-
+    } catch {
       setServerError(
         "Registration failed. Please check your information and try again."
       );
     }
-  };
+  }
 
   const password = watch("password") || "";
   const confirmPassword = watch("confirmPassword") || "";
@@ -263,29 +259,47 @@ export default function DoctorRegister() {
     /[^A-Za-z0-9\s]/.test(password),
   ];
 
-  const strength = passwordChecks.filter(Boolean).length;
+  let strength = 0;
+  for (const checkPassed of passwordChecks) {
+    if (checkPassed) {
+      strength++;
+    }
+  }
+
+  let strengthLabel = "Strong";
+  if (strength === 0) {
+    strengthLabel = "Not entered";
+  } else if (strength <= 2) {
+    strengthLabel = "Weak";
+  } else if (strength <= 4) {
+    strengthLabel = "Moderate";
+  }
 
   const passwordsMatch =
     password.length > 0 &&
     confirmPassword.length > 0 &&
     password === confirmPassword;
 
-  const fieldProps = (name) => ({
-    fullWidth: true,
-    size: "small",
-    variant: "outlined",
-    sx: fieldSx,
-    error: !!errors[name],
-    ...register(name),
-  });
+  function getFieldProps(name) {
+    return {
+      fullWidth: true,
+      size: "small",
+      variant: "outlined",
+      sx: fieldSx,
+      error: !!errors[name],
+      ...register(name),
+    };
+  }
 
-  const iconAdornment = (name) => ({
-    startAdornment: (
-      <InputAdornment position="start">
-        <MaterialIcon name={name} />
-      </InputAdornment>
-    ),
-  });
+  function getIconAdornment(name) {
+    return {
+      startAdornment: (
+        <InputAdornment position="start">
+          <MaterialIcon name={name} />
+        </InputAdornment>
+      ),
+    };
+  }
 
   const sectionSx = {
     width: "100%",
@@ -525,7 +539,7 @@ export default function DoctorRegister() {
 
         <Box
           component="form"
-          onSubmit={handleSubmit(onSubmit)}
+          onSubmit={handleSubmit(handleRegisterDoctor)}
           noValidate
         >
           <Stack spacing={3}>
@@ -544,10 +558,10 @@ export default function DoctorRegister() {
                   error={errors.fullName}
                 >
                   <TextField
-                    {...fieldProps("fullName")}
+                    {...getFieldProps("fullName")}
                     placeholder="Dr. Julian Marcus Vance"
                     slotProps={{
-                      input: iconAdornment("person"),
+                      input: getIconAdornment("person"),
                     }}
                   />
                 </FormField>
@@ -557,10 +571,10 @@ export default function DoctorRegister() {
                   error={errors.userName}
                 >
                   <TextField
-                    {...fieldProps("userName")}
+                    {...getFieldProps("userName")}
                     placeholder="dr_jvance"
                     slotProps={{
-                      input: iconAdornment("alternate_email"),
+                      input: getIconAdornment("alternate_email"),
                     }}
                   />
                 </FormField>
@@ -571,11 +585,11 @@ export default function DoctorRegister() {
                   error={errors.email}
                 >
                   <TextField
-                    {...fieldProps("email")}
+                    {...getFieldProps("email")}
                     type="email"
                     placeholder="doctor@clinic.org"
                     slotProps={{
-                      input: iconAdornment("mail"),
+                      input: getIconAdornment("mail"),
                     }}
                   />
                 </FormField>
@@ -595,10 +609,10 @@ export default function DoctorRegister() {
                     error={errors.dateOfBirth}
                   >
                     <TextField
-                      {...fieldProps("dateOfBirth")}
+                      {...getFieldProps("dateOfBirth")}
                       type="date"
                       slotProps={{
-                        input: iconAdornment("calendar_today"),
+                        input: getIconAdornment("calendar_today"),
                       }}
                     />
                   </FormField>
@@ -619,7 +633,7 @@ export default function DoctorRegister() {
                           error={!!errors.gender}
                           sx={fieldSx}
                           slotProps={{
-                            input: iconAdornment("wc"),
+                            input: getIconAdornment("wc"),
                           }}
                         >
                           <MenuItem value="Male">
@@ -651,14 +665,14 @@ export default function DoctorRegister() {
                   error={errors.password}
                 >
                   <TextField
-                    {...fieldProps("password")}
+                    {...getFieldProps("password")}
                     type={
                       showPassword ? "text" : "password"
                     }
                     placeholder="Minimum 8 characters"
                     slotProps={{
                       input: {
-                        ...iconAdornment("key"),
+                        ...getIconAdornment("key"),
 
                         endAdornment: (
                           <InputAdornment position="end">
@@ -715,13 +729,7 @@ export default function DoctorRegister() {
                         color: colors.primary,
                       }}
                     >
-                      {strength === 0
-                        ? "Not entered"
-                        : strength <= 2
-                        ? "Weak"
-                        : strength <= 4
-                        ? "Moderate"
-                        : "Strong"}
+                      {strengthLabel}
                     </Typography>
                   </Stack>
 
@@ -757,7 +765,7 @@ export default function DoctorRegister() {
                   error={errors.confirmPassword}
                 >
                   <TextField
-                    {...fieldProps("confirmPassword")}
+                    {...getFieldProps("confirmPassword")}
                     type={
                       showConfirmPassword
                         ? "text"
@@ -766,7 +774,7 @@ export default function DoctorRegister() {
                     placeholder="Repeat your password"
                     slotProps={{
                       input: {
-                        ...iconAdornment("enhanced_encryption"),
+                        ...getIconAdornment("enhanced_encryption"),
 
                         endAdornment: (
                           <InputAdornment position="end">
@@ -848,7 +856,7 @@ export default function DoctorRegister() {
                         error={!!errors.specialization}
                         sx={fieldSx}
                         slotProps={{
-                          input: iconAdornment("cardiology"),
+                          input: getIconAdornment("cardiology"),
                         }}
                       >
                         {specializations.map((specialty) => (
@@ -986,10 +994,10 @@ export default function DoctorRegister() {
                     error={errors.certificate}
                   >
                     <TextField
-                      {...fieldProps("certificate")}
+                      {...getFieldProps("certificate")}
                       placeholder="Enter certificate reference"
                       slotProps={{
-                        input: iconAdornment("workspace_premium"),
+                        input: getIconAdornment("workspace_premium"),
                       }}
                     />
                   </FormField>

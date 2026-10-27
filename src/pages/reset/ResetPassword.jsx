@@ -1,5 +1,5 @@
 
-import React, { useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import {
   Alert,
@@ -21,7 +21,7 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
-import axios from "axios";
+import { api } from "../../api/client.js";
 
 import { resetSchema } from "../../validations/authSchemas";
 
@@ -146,26 +146,68 @@ export default function ResetPassword() {
 
   const newPassword = watch("newPassword") || "";
 
-  const onSubmit = async (data) => {
+  async function handleResetPassword(data) {
     setServerError(null);
 
     try {
-      const response = await axios.patch(
-        `${import.meta.env.VITE_API_BASE_URL}/Account/ResetPassword`,
+      await api.patch(
+        "/Account/ResetPassword",
         data
       );
-
-      console.log(response.data);
       setSuccess(true);
     } catch (err) {
-      console.log(err.response);
-
       setServerError(
         err.response?.data?.message ||
           "Unable to reset your password. Please verify your code and try again."
       );
     }
-  };
+  }
+
+  function handleDigitChange(field, index, value) {
+    const code = String(field.value || "");
+    const digit = value.replace(/\D/g, "");
+    // Spaces preserve empty positions in the five separate input boxes.
+    const digits = code.padEnd(5, " ").split("");
+
+    if (!digit) {
+      digits[index] = " ";
+      field.onChange(digits.join("").trimEnd());
+      return;
+    }
+
+    digits[index] = digit.slice(-1);
+    field.onChange(digits.join("").trimEnd());
+    if (index < 4) {
+      otpRefs.current[index + 1]?.focus();
+    }
+  }
+
+  function handleCodePaste(event, field) {
+    const pastedCode = event.clipboardData
+      .getData("text")
+      .replace(/\D/g, "")
+      .slice(0, 5);
+    if (!pastedCode) {
+      return;
+    }
+
+    event.preventDefault();
+    field.onChange(pastedCode);
+    const focusIndex = Math.min(pastedCode.length, 4);
+    otpRefs.current[focusIndex]?.focus();
+  }
+
+  function handleCodeKeyDown(event, index, code) {
+    if (event.key === "Backspace" && !code[index] && index > 0) {
+      otpRefs.current[index - 1]?.focus();
+    }
+    if (event.key === "ArrowLeft" && index > 0) {
+      otpRefs.current[index - 1]?.focus();
+    }
+    if (event.key === "ArrowRight" && index < 4) {
+      otpRefs.current[index + 1]?.focus();
+    }
+  }
 
   return (
     <Box
@@ -482,7 +524,7 @@ export default function ResetPassword() {
           >
             <Box
               component="form"
-              onSubmit={handleSubmit(onSubmit)}
+              onSubmit={handleSubmit(handleResetPassword)}
               noValidate
             >
               {/* Email */}
@@ -590,54 +632,6 @@ export default function ResetPassword() {
                   render={({ field }) => {
                     const code = String(field.value || "");
 
-                    const updateCode = (nextCode) => {
-                      field.onChange(nextCode);
-                    };
-
-                    const handleDigitChange = (index, value) => {
-                      const digit = value.replace(/\D/g, "");
-
-                      const digits = code
-                        .padEnd(5, " ")
-                        .split("");
-
-                      if (!digit) {
-                        digits[index] = " ";
-
-                        updateCode(
-                          digits.join("").trimEnd()
-                        );
-
-                        return;
-                      }
-
-                      digits[index] = digit.slice(-1);
-
-                      updateCode(
-                        digits.join("").trimEnd()
-                      );
-
-                      if (index < 4) {
-                        otpRefs.current[index + 1]?.focus();
-                      }
-                    };
-
-                    const handlePaste = (event) => {
-                      const pasted = event.clipboardData
-                        .getData("text")
-                        .replace(/\D/g, "")
-                        .slice(0, 5);
-
-                      if (!pasted) return;
-
-                      event.preventDefault();
-                      updateCode(pasted);
-
-                      otpRefs.current[
-                        Math.min(pasted.length, 4)
-                      ]?.focus();
-                    };
-
                     return (
                       <Box>
                         <Box
@@ -648,9 +642,7 @@ export default function ResetPassword() {
                             gap: { xs: 1, sm: 1.5 },
                           }}
                         >
-                          {Array.from(
-                            { length: 5 },
-                            (_, index) => (
+                          {[0, 1, 2, 3, 4].map((index) => (
                               <TextField
                                 key={index}
                                 inputRef={(element) => {
@@ -658,43 +650,11 @@ export default function ResetPassword() {
                                     element;
                                 }}
                                 value={code[index] || ""}
-                                onChange={(event) =>
-                                  handleDigitChange(
-                                    index,
-                                    event.target.value
-                                  )
+                                onChange={(event) => handleDigitChange(field, index, event.target.value)
                                 }
                                 onBlur={field.onBlur}
-                                onPaste={handlePaste}
-                                onKeyDown={(event) => {
-                                  if (
-                                    event.key === "Backspace" &&
-                                    !code[index] &&
-                                    index > 0
-                                  ) {
-                                    otpRefs.current[
-                                      index - 1
-                                    ]?.focus();
-                                  }
-
-                                  if (
-                                    event.key === "ArrowLeft" &&
-                                    index > 0
-                                  ) {
-                                    otpRefs.current[
-                                      index - 1
-                                    ]?.focus();
-                                  }
-
-                                  if (
-                                    event.key === "ArrowRight" &&
-                                    index < 4
-                                  ) {
-                                    otpRefs.current[
-                                      index + 1
-                                    ]?.focus();
-                                  }
-                                }}
+                                onPaste={(event) => handleCodePaste(event, field)}
+                                onKeyDown={(event) => handleCodeKeyDown(event, index, code)}
                                 error={!!errors.code}
                                 slotProps={{
                                   htmlInput: {

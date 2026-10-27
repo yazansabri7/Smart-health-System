@@ -17,8 +17,10 @@ import {
 
 import { useForm } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
-import { Link, useNavigate } from "react-router-dom";
-import axios from "axios";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { signIn } from "../../auth/login.js";
+import { AUTH_MESSAGES, AuthError } from "../../auth/jwt.js";
+import useAuth from "../../auth/useAuth.js";
 
 import { loginSchema } from "../../validations/authSchemas";
 
@@ -93,10 +95,14 @@ const fieldSx = {
 
 export default function Login() {
   const [serverError, setServerError] = useState(null);
+  const [errorSeverity, setErrorSeverity] = useState('error');
   const [success, setSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   const navigate = useNavigate();
+  const location = useLocation();
+  const { reason } = useAuth();
+  const sessionMessage = AUTH_MESSAGES[reason || location.state?.authReason];
 
   const {
     register,
@@ -110,28 +116,36 @@ export default function Login() {
     mode: "onBlur",
   });
 
-  const onSubmit = async (data) => {
+  let alertSeverity = 'error';
+  if (serverError) {
+    alertSeverity = errorSeverity;
+  } else if (reason === 'unconfirmed') {
+    alertSeverity = 'warning';
+  } else if (reason === 'signed_out') {
+    alertSeverity = 'info';
+  }
+
+  async function handleLogin(data) {
     setServerError(null);
+    setErrorSeverity('error');
 
     try {
-      const response = await axios.post(
-        `${import.meta.env.VITE_API_BASE_URL}/Account/Login`,
-        data
-      );
-
-      console.log(response.data);
-
+      const destination = await signIn(data);
       setSuccess(true);
-      navigate("/");
+      navigate(destination, { replace: true });
     } catch (err) {
-      console.log(err.response);
-
-      setServerError(
-        err.response?.data?.message ||
-          "Login failed. Please check your credentials."
-      );
+      if (err instanceof AuthError) {
+        setServerError(err.message);
+      } else {
+        setServerError(AUTH_MESSAGES.failed);
+      }
+      if (err.code === 'unconfirmed') {
+        setErrorSeverity('warning');
+      } else {
+        setErrorSeverity('error');
+      }
     }
-  };
+  }
 
   return (
     <Box
@@ -355,16 +369,15 @@ export default function Login() {
         </Box>
 
         {/* Server Error */}
-        {serverError && (
+        {!isSubmitting && (serverError || sessionMessage) && (
           <Alert
-            severity="error"
-            onClose={() => setServerError(null)}
+            severity={alertSeverity}
             sx={{
               mb: 2,
               borderRadius: 3,
             }}
           >
-            {serverError}
+            {serverError || sessionMessage}
           </Alert>
         )}
 
@@ -382,7 +395,7 @@ export default function Login() {
         >
           <Box
             component="form"
-            onSubmit={handleSubmit(onSubmit)}
+            onSubmit={handleSubmit(handleLogin)}
             noValidate
             sx={{
               width: "100%",
@@ -520,7 +533,7 @@ export default function Login() {
               <TextField
                 fullWidth
                 size="small"
-                type={showPassword ? "text" : "password"}
+                type={showPassword ? "password" : "text"}
                 placeholder="Enter your password"
                 {...register("password")}
                 error={!!errors.password}
