@@ -201,7 +201,7 @@ export default function Register() {
     console.log(data);
     try {
       const respone = await axios.post(
-        "https://chatsystem.runasp.net/api/Account/RegisterPatient",
+        `${import.meta.env.VITE_API_BASE_URL}/Account/RegisterPatient`,
         data
       );
       console.log(respone);

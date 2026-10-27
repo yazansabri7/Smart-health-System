@@ -1,4 +1,4 @@
-import { createBrowserRouter } from "react-router";
+import { createBrowserRouter } from "react-router-dom";
 import Mainlayout from "./layouts/Mainlayout";
 import Home from "./pages/home/Home";
 import Authlayout from "./layouts/Authlayout";
@@ -46,6 +46,4 @@ const router = createBrowserRouter([
     ]
   }
 ]);
-
-
 export default router;
