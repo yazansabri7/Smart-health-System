@@ -151,7 +151,7 @@ export default function ResetPassword() {
 
     try {
       const response = await axios.patch(
-        "https://chatsystem.runasp.net/api/Account/ResetPassword",
+        `${import.meta.env.VITE_API_BASE_URL}/Account/ResetPassword`,
         data
       );
 

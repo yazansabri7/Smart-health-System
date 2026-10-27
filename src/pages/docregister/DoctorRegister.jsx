@@ -232,7 +232,7 @@ export default function DoctorRegister() {
 
     try {
       const response = await axios.post(
-        "https://chatsystem.runasp.net/api/Account/RegisterDoctor",
+        `${import.meta.env.VITE_API_BASE_URL}/Account/RegisterDoctor`,
         data
       );
 

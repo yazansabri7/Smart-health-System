@@ -115,7 +115,7 @@ export default function SendCode() {
 
     try {
       const response = await axios.post(
-        "https://chatsystem.runasp.net/api/Account/SendCode",
+        `${import.meta.env.VITE_API_BASE_URL}/Account/SendCode`,
         data
       );
 
@@ -140,7 +140,7 @@ export default function SendCode() {
 
     try {
       await axios.post(
-        "https://chatsystem.runasp.net/api/Account/SendCode",
+        `${import.meta.env.VITE_API_BASE_URL}/Account/SendCode`,
         { email: sentEmail }
       );
     } catch (err) {
