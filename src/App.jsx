@@ -2,7 +2,7 @@
 export default function App() {
   return (
     <>
-  <h2>hello baraa 1  </h2>
+  <h2>hello yazan 1  </h2>
     </>
   )
 }
