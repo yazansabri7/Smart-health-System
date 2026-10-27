@@ -14,7 +14,7 @@ import {
   Typography,
 } from "@mui/material";
 
-import { useForm, Controller } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
 import {
   Link,
@@ -105,6 +105,10 @@ const passwordRules = [
     check: (value) => /[A-Z]/.test(value),
   },
   {
+    label: "Lowercase letter",
+    check: (value) => /[a-z]/.test(value),
+  },
+  {
     label: "One number",
     check: (value) => /[0-9]/.test(value),
   },
@@ -123,11 +127,6 @@ export default function ResetPassword() {
   const [serverError, setServerError] = useState(null);
   const [success, setSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] =
-    useState(false);
-
-  const [isResending, setIsResending] = useState(false);
-  const [resendMessage, setResendMessage] = useState("");
 
   const {
     register,
@@ -151,11 +150,12 @@ export default function ResetPassword() {
     setServerError(null);
 
     try {
-      await axios.patch(
+      const response = await axios.patch(
         "https://chatsystem.runasp.net/api/Account/ResetPassword",
         data
       );
 
+      console.log(response.data);
       setSuccess(true);
     } catch (err) {
       console.log(err.response);
@@ -164,39 +164,6 @@ export default function ResetPassword() {
         err.response?.data?.message ||
           "Unable to reset your password. Please verify your code and try again."
       );
-    }
-  };
-
-  const handleResend = async () => {
-    const email = watch("email");
-
-    if (!email || isResending) {
-      setResendMessage(
-        "Please enter your registered email first."
-      );
-      return;
-    }
-
-    setIsResending(true);
-    setResendMessage("");
-
-    try {
-      await axios.post(
-        "https://chatsystem.runasp.net/api/Account/SendCode",
-        { email }
-      );
-
-      setResendMessage(
-        "A new verification code has been requested."
-      );
-    } catch (err) {
-      console.log(err.response);
-
-      setResendMessage(
-        "Unable to resend the code. Please try again."
-      );
-    } finally {
-      setIsResending(false);
     }
   };
 
@@ -323,8 +290,10 @@ export default function ResetPassword() {
         {/* Security Badge */}
         <Box
           sx={{
+            width: "100%",
             display: "flex",
             justifyContent: "center",
+            alignItems: "center",
             mb: 3,
           }}
         >
@@ -366,6 +335,7 @@ export default function ResetPassword() {
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
+            justifyContent: "center",
             textAlign: "center",
             mb: 3,
           }}
@@ -412,7 +382,7 @@ export default function ResetPassword() {
           </Typography>
         </Box>
 
-        {/* Error */}
+        {/* Server Error */}
         {serverError && (
           <Alert
             severity="error"
@@ -565,6 +535,7 @@ export default function ResetPassword() {
                   fullWidth
                   type="email"
                   placeholder="name@example.com"
+                  autoComplete="email"
                   {...register("email")}
                   error={!!errors.email}
                   helperText={errors.email?.message}
@@ -626,11 +597,11 @@ export default function ResetPassword() {
                     const handleDigitChange = (index, value) => {
                       const digit = value.replace(/\D/g, "");
 
-                      if (!digit) {
-                        const digits = code
-                          .padEnd(5, " ")
-                          .split("");
+                      const digits = code
+                        .padEnd(5, " ")
+                        .split("");
 
+                      if (!digit) {
                         digits[index] = " ";
 
                         updateCode(
@@ -639,10 +610,6 @@ export default function ResetPassword() {
 
                         return;
                       }
-
-                      const digits = code
-                        .padEnd(5, " ")
-                        .split("");
 
                       digits[index] = digit.slice(-1);
 
@@ -795,7 +762,7 @@ export default function ResetPassword() {
                   }}
                 />
 
-                {/* Resend */}
+                {/* Resend Code - Navigate to SendCode */}
                 <Box
                   sx={{
                     display: "flex",
@@ -832,8 +799,7 @@ export default function ResetPassword() {
 
                   <Button
                     type="button"
-                    onClick={handleResend}
-                    disabled={isResending}
+                    onClick={() => navigate("/sendcode")}
                     sx={{
                       textTransform: "none",
                       color: colors.primary,
@@ -842,23 +808,9 @@ export default function ResetPassword() {
                       flexShrink: 0,
                     }}
                   >
-                    {isResending
-                      ? "Sending..."
-                      : "Resend Code"}
+                    Resend Code
                   </Button>
                 </Box>
-
-                {resendMessage && (
-                  <Typography
-                    sx={{
-                      mt: 1,
-                      fontSize: 12,
-                      color: colors.primary,
-                    }}
-                  >
-                    {resendMessage}
-                  </Typography>
-                )}
               </Box>
 
               {/* New Password */}
@@ -1070,16 +1022,19 @@ export default function ResetPassword() {
         {/* Footer */}
         <Box
           sx={{
+            width: "100%",
             mt: 3,
             textAlign: "center",
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
+            justifyContent: "center",
             gap: 1,
           }}
         >
           <Box
             sx={{
+              width: "100%",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
