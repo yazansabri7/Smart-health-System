@@ -1,5 +1,5 @@
 
-import React, { useState } from "react";
+import { useState } from "react";
 
 import {
   Alert,
@@ -17,7 +17,7 @@ import {
 import { useForm } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
 import { Link, useNavigate } from "react-router-dom";
-import axios from "axios";
+import { api } from "../../api/client.js";
 
 import { sendSchema } from "../../validations/authSchemas";
 
@@ -110,47 +110,41 @@ export default function SendCode() {
     },
   });
 
-  const onSubmit = async (data) => {
+  async function handleSendCode(data) {
     setServerError(null);
 
     try {
-      const response = await axios.post(
-        `${import.meta.env.VITE_API_BASE_URL}/Account/SendCode`,
+      await api.post(
+        "/Account/SendCode",
         data
       );
-
-      console.log(response.data);
 
       setSentEmail(data.email);
       setSuccess(true);
     } catch (err) {
-      console.log(err.response);
-
       setServerError(
         err.response?.data?.message ||
           "Unable to send the reset code. Please check your email and try again."
       );
     }
-  };
+  }
 
-  const handleResend = async () => {
+  async function handleResend() {
     if (!sentEmail || isSubmitting) return;
 
     setServerError(null);
 
     try {
-      await axios.post(
-        `${import.meta.env.VITE_API_BASE_URL}/Account/SendCode`,
+      await api.post(
+        "/Account/SendCode",
         { email: sentEmail }
       );
-    } catch (err) {
-      console.log(err.response);
-
+    } catch {
       setServerError(
         "Unable to resend the code. Please try again."
       );
     }
-  };
+  }
 
   return (
     <Box
@@ -580,7 +574,7 @@ export default function SendCode() {
               /* Recovery Form */
               <Box
                 component="form"
-                onSubmit={handleSubmit(onSubmit)}
+                onSubmit={handleSubmit(handleSendCode)}
                 noValidate
                 sx={{
                   width: "100%",

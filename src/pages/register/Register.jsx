@@ -1,5 +1,5 @@
 
-import React, { useState } from "react";
+import { useState } from "react";
 import {
   Alert,
   Box,
@@ -28,26 +28,28 @@ import { useForm } from "react-hook-form";
 import { Link, useNavigate } from "react-router-dom";
 import { registerSchema } from "../../validations/authSchemas";
 import { yupResolver } from "@hookform/resolvers/yup";
-import axios from "axios";
+import { api } from "../../api/client.js";
 
 // Google Material Symbols - no @mui/icons-material imports
-const MaterialIcon = ({ name, sx = {} }) => (
-  <Box
-    component="span"
-    className="material-symbols-outlined"
-    aria-hidden="true"
-    sx={{
-      fontSize: 21,
-      lineHeight: 1,
-      display: "inline-flex",
-      alignItems: "center",
-      justifyContent: "center",
-      ...sx,
-    }}
-  >
-    {name}
-  </Box>
-);
+function MaterialIcon({ name, sx = {} }) {
+  return (
+    <Box
+      component="span"
+      className="material-symbols-outlined"
+      aria-hidden="true"
+      sx={{
+        fontSize: 21,
+        lineHeight: 1,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        ...sx,
+      }}
+    >
+      {name}
+    </Box>
+  );
+}
 
 const colors = {
   primary: "#005c55",
@@ -179,7 +181,6 @@ function FormField({ label, helper, error, children }) {
 export default function Register() {
   const [openSuccess, setOpenSuccess] = useState(false);
   const [serverError, setServerError] = useState(null);
-  const [success, setSuccess] = useState(false);
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -196,27 +197,22 @@ export default function Register() {
     mode: "onBlur",
   });
 
-  // Original registration logic - unchanged
-  const onSubmit = async (data) => {
-    console.log(data);
+  async function handleRegister(data) {
     try {
-      const respone = await axios.post(
-        `${import.meta.env.VITE_API_BASE_URL}/Account/RegisterPatient`,
+      await api.post(
+        "/Account/RegisterPatient",
         data
       );
-      console.log(respone);
-      setSuccess(true);
       setOpenSuccess(true);
 
       setTimeout(() => {
         navigate("/login");
       }, 10000);
 
-    } catch (err) {
-      console.log(err.response);
+    } catch {
       setServerError("Registeration Failed ");
     }
-  };
+  }
 
   // Visual indicators only
   const password = watch("password") || "";
@@ -230,29 +226,47 @@ export default function Register() {
     /[^A-Za-z0-9]/.test(password),
   ];
 
-  const strength = passwordChecks.filter(Boolean).length;
+  let strength = 0;
+  for (const checkPassed of passwordChecks) {
+    if (checkPassed) {
+      strength++;
+    }
+  }
+
+  let strengthLabel = "Strong";
+  if (strength === 0) {
+    strengthLabel = "Not entered";
+  } else if (strength <= 2) {
+    strengthLabel = "Weak";
+  } else if (strength <= 4) {
+    strengthLabel = "Moderate";
+  }
 
   const passwordsMatch =
     password.length > 0 &&
     confirmPassword.length > 0 &&
     password === confirmPassword;
 
-  const iconAdornment = (name) => ({
-    startAdornment: (
-      <InputAdornment position="start">
-        <MaterialIcon name={name} />
-      </InputAdornment>
-    ),
-  });
+  function getIconAdornment(name) {
+    return {
+      startAdornment: (
+        <InputAdornment position="start">
+          <MaterialIcon name={name} />
+        </InputAdornment>
+      ),
+    };
+  }
 
-  const fieldProps = (name) => ({
-    fullWidth: true,
-    size: "small",
-    variant: "outlined",
-    sx: fieldSx,
-    error: !!errors[name],
-    ...register(name),
-  });
+  function getFieldProps(name) {
+    return {
+      fullWidth: true,
+      size: "small",
+      variant: "outlined",
+      sx: fieldSx,
+      error: !!errors[name],
+      ...register(name),
+    };
+  }
 
   return (
     <Box
@@ -401,7 +415,7 @@ export default function Register() {
           </Stack>
         </Paper>
 
-        <Box component="form" onSubmit={handleSubmit(onSubmit)}>
+        <Box component="form" onSubmit={handleSubmit(handleRegister)}>
           <Stack spacing={3}>
             {/* Section 1: Personal Information */}
             <Paper elevation={0} sx={sectionSx}>
@@ -418,10 +432,10 @@ export default function Register() {
                   error={errors.fullName}
                 >
                   <TextField
-                    {...fieldProps("fullName")}
+                    {...getFieldProps("fullName")}
                     placeholder="Eleanor Vance"
                     slotProps={{
-                      input: iconAdornment("person"),
+                      input: getIconAdornment("person"),
                     }}
                   />
                 </FormField>
@@ -432,10 +446,10 @@ export default function Register() {
                   error={errors.userName}
                 >
                   <TextField
-                    {...fieldProps("userName")}
+                    {...getFieldProps("userName")}
                     placeholder="eleanor.vance"
                     slotProps={{
-                      input: iconAdornment("alternate_email"),
+                      input: getIconAdornment("alternate_email"),
                     }}
                   />
                 </FormField>
@@ -445,11 +459,11 @@ export default function Register() {
                   error={errors.email}
                 >
                   <TextField
-                    {...fieldProps("email")}
+                    {...getFieldProps("email")}
                     type="email"
                     placeholder="you@example.com"
                     slotProps={{
-                      input: iconAdornment("mail"),
+                      input: getIconAdornment("mail"),
                     }}
                   />
                 </FormField>
@@ -460,11 +474,11 @@ export default function Register() {
                   error={errors.phoneNumber}
                 >
                   <TextField
-                    {...fieldProps("phoneNumber")}
+                    {...getFieldProps("phoneNumber")}
                     type="tel"
                     placeholder="Phone number"
                     slotProps={{
-                      input: iconAdornment("call"),
+                      input: getIconAdornment("call"),
                     }}
                   />
                 </FormField>
@@ -484,10 +498,10 @@ export default function Register() {
                     error={errors.dateOfBirth}
                   >
                     <TextField
-                      {...fieldProps("dateOfBirth")}
+                      {...getFieldProps("dateOfBirth")}
                       type="date"
                       slotProps={{
-                        input: iconAdornment("calendar_today"),
+                        input: getIconAdornment("calendar_today"),
                       }}
                     />
                   </FormField>
@@ -498,11 +512,11 @@ export default function Register() {
                     error={errors.gender}
                   >
                     <TextField
-                      {...fieldProps("gender")}
+                      {...getFieldProps("gender")}
                       select
                       defaultValue=""
                       slotProps={{
-                        input: iconAdornment("wc"),
+                        input: getIconAdornment("wc"),
                       }}
                     >
                       <MenuItem value="Male">Male</MenuItem>
@@ -517,10 +531,10 @@ export default function Register() {
                   error={errors.city}
                 >
                   <TextField
-                    {...fieldProps("city")}
+                    {...getFieldProps("city")}
                     placeholder="Your city"
                     slotProps={{
-                      input: iconAdornment("location_city"),
+                      input: getIconAdornment("location_city"),
                     }}
                   />
                 </FormField>
@@ -562,10 +576,10 @@ export default function Register() {
                   error={errors.age}
                 >
                   <TextField
-                    {...fieldProps("age")}
+                    {...getFieldProps("age")}
                     placeholder="32"
                     slotProps={{
-                      input: iconAdornment("cake"),
+                      input: getIconAdornment("cake"),
                     }}
                   />
                 </FormField>
@@ -576,10 +590,10 @@ export default function Register() {
                   error={errors.height}
                 >
                   <TextField
-                    {...fieldProps("height")}
+                    {...getFieldProps("height")}
                     placeholder="178"
                     slotProps={{
-                      input: iconAdornment("height"),
+                      input: getIconAdornment("height"),
                     }}
                   />
                 </FormField>
@@ -590,10 +604,10 @@ export default function Register() {
                   error={errors.weight}
                 >
                   <TextField
-                    {...fieldProps("weight")}
+                    {...getFieldProps("weight")}
                     placeholder="70"
                     slotProps={{
-                      input: iconAdornment("monitor_weight"),
+                      input: getIconAdornment("monitor_weight"),
                     }}
                   />
                 </FormField>
@@ -614,12 +628,12 @@ export default function Register() {
                   error={errors.password}
                 >
                   <TextField
-                    {...fieldProps("password")}
+                    {...getFieldProps("password")}
                     type={showPassword ? "text" : "password"}
                     placeholder="Create a secure password"
                     slotProps={{
                       input: {
-                        ...iconAdornment("lock"),
+                        ...getIconAdornment("lock"),
                         endAdornment: (
                           <InputAdornment position="end">
                             <IconButton
@@ -688,13 +702,7 @@ export default function Register() {
                         color: colors.primary,
                       }}
                     >
-                      {strength === 0
-                        ? "Not entered"
-                        : strength <= 2
-                          ? "Weak"
-                          : strength <= 4
-                            ? "Moderate"
-                            : "Strong"}
+                      {strengthLabel}
                     </Typography>
                   </Stack>
 
@@ -728,14 +736,14 @@ export default function Register() {
                   error={errors.confirmPassword}
                 >
                   <TextField
-                    {...fieldProps("confirmPassword")}
+                    {...getFieldProps("confirmPassword")}
                     type={
                       showConfirmPassword ? "text" : "password"
                     }
                     placeholder="Confirm your password"
                     slotProps={{
                       input: {
-                        ...iconAdornment("lock_reset"),
+                        ...getIconAdornment("lock_reset"),
                         endAdornment: (
                           <InputAdornment position="end">
                             <IconButton
