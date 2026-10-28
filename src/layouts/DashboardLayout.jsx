@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
   Box,
-  createTheme,
   Drawer,
   GlobalStyles,
   ThemeProvider,
@@ -12,6 +11,7 @@ import Navbar from '../components/navbar/Navbar';
 import Sidebar from '../components/layout/Sidebar';
 import useAuth from '../auth/useAuth.js';
 import { authSession } from '../auth/session.js';
+import { createDashboardTheme } from '../config/theme.js';
 
 export default function DashboardLayout({ role, navigation }) {
   const { session } = useAuth();
@@ -38,26 +38,7 @@ export default function DashboardLayout({ role, navigation }) {
   const sidebarWidth = collapsed ? 80 : 264;
 
   // Keep the theme object stable when only the drawer or menu changes.
-  const theme = useMemo(() => {
-    const palette = {
-      mode,
-      primary: { main: '#80cbc4', contrastText: '#041b3c' },
-    };
-    if (mode === 'light') {
-      palette.primary = { main: '#005c55', contrastText: '#ffffff' };
-      palette.background = { default: '#f9f9ff', paper: '#ffffff' };
-      palette.text = { primary: '#041b3c', secondary: '#3e4947' };
-      palette.action = { selected: '#cee5df' };
-    }
-    return createTheme({
-      palette,
-      typography: {
-        fontFamily: "'Plus Jakarta Sans', sans-serif",
-        button: { textTransform: 'none', fontWeight: 600 },
-      },
-      shape: { borderRadius: 12 },
-    });
-  }, [mode]);
+  const theme = useMemo(() => createDashboardTheme(mode), [mode]);
 
   const currentPage = navigation.find(item => {
     const isExactMatch = location.pathname === item.path;

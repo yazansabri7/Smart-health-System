@@ -1,5 +1,6 @@
 
 import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 
 import {
   Alert,
@@ -99,6 +100,8 @@ export default function Login() {
   const [success, setSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  const request = useMutation({ mutationFn: (data) => signIn(data), retry: false });
+
   const navigate = useNavigate();
   const location = useLocation();
   const { reason } = useAuth();
@@ -130,7 +133,7 @@ export default function Login() {
     setErrorSeverity('error');
 
     try {
-      const destination = await signIn(data);
+      const destination = await request.mutateAsync(data);
       setSuccess(true);
       navigate(destination, { replace: true });
     } catch (err) {

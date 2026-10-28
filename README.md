@@ -1,129 +1,118 @@
-# SmartDHP healthcare frontend
+﻿# SmartDHP healthcare frontend
 
-SmartDHP is a React application with Patient, Doctor, and Admin workspaces.
-It uses Vite, Material UI, React Router, Axios, React Hook Form, and Yup.
+React + Vite, Material UI, React Router, Axios, TanStack React Query,
+React Hook Form, and Yup. The Patient, Doctor, and Admin workspaces share
+one responsive dashboard layout.
 
-## Run the project
+## Run
 
 ```powershell
 npm install
 npm run dev
 ```
 
-The API base address is read from `VITE_API_BASE_URL` in `.env`. The existing
-API address, endpoints, and request formats were preserved during refactoring.
+`.env` uses `VITE_BASE_URL` for the existing API address. Restart Vite after
+changing an environment variable. The API address itself was not changed.
 
-## Files changed by the readability refactor
+## Important files
 
-- `src/App.jsx` and `src/router.jsx`
-- `src/api/client.js`
-- `src/auth/jwt.js`, `session.js`, `login.js`, `ProtectedRoute.jsx`, and `useAuth.js`
-- `src/layouts/DashboardLayout.jsx`
-- `src/components/layout/Sidebar.jsx` and `MaterialIcon.jsx`
-- `src/components/navbar/Navbar.jsx`
-- `src/pages/dashboard/AccessDenied.jsx` and `DashboardPlaceholder.jsx`
-- `src/pages/login/Login.jsx`
-- `src/pages/register/Register.jsx`
-- `src/pages/docregister/DoctorRegister.jsx`
-- `src/pages/sendcode/SendCode.jsx`
-- `src/pages/reset/ResetPassword.jsx`
-- `src/validations/authSchemas.js`
-- `scripts/auth-browser-tests.mjs` and this README
-
-Other pre-existing working-tree changes were kept. Package files, `.env`, build
-configuration, assets, and the already-simple source files were not refactored.
-
-## Where to start reading
-
-| File | Responsibility |
+| File | What it does |
 | --- | --- |
-| `src/main.jsx` | Mounts the application in the browser. |
-| `src/App.jsx` | Renders the router and listens for browser events that can change authentication. |
-| `src/router.jsx` | Defines public pages, role guards, dashboard pages, and nested routes. |
-| `src/config/navigation.js` | Lists each role's sidebar labels, icons, and paths. |
-| `src/pages/login/Login.jsx` | Displays the login form, loading state, password toggle, and safe error/warning alerts. |
-| `src/pages/register/Register.jsx` | Displays patient registration and its success dialog and redirect. |
-| `src/pages/docregister/DoctorRegister.jsx` | Displays doctor registration, specialization selection, and its success dialog. |
-| `src/pages/sendcode/SendCode.jsx` | Sends or resends a reset code and passes the email to the reset page. |
-| `src/pages/reset/ResetPassword.jsx` | Handles the five code boxes, keyboard/paste behavior, new password, and reset request. |
-| `src/validations/authSchemas.js` | Holds the existing Yup validation rules and their messages. |
-| `src/api/client.js` | Configures Axios, API authorization headers, and HTTP 401/403 handling. |
-| `src/auth/login.js` | Makes the login request, maps backend messages, and returns the correct dashboard path. |
-| `src/auth/jwt.js` | Decodes token claims and validates expiration and the account's role. |
-| `src/auth/session.js` | Stores the current session, saves/restores `authToken`, handles expiry and logout, and notifies React. |
-| `src/auth/useAuth.js` | Gives components the latest shared authentication state. |
-| `src/auth/ProtectedRoute.jsx` | Checks authentication and the required role before rendering protected pages. |
-| `src/layouts/DashboardLayout.jsx` | Combines the theme, responsive sidebar, navbar, and nested page content. |
-| `src/layouts/PatientLayout.jsx`, `DoctorLayout.jsx`, `AdminLayout.jsx` | Pass the appropriate role and navigation to the shared layout. |
-| `src/components/layout/Sidebar.jsx` | Renders role navigation, active links, collapsed tooltips, and logout. |
-| `src/components/navbar/Navbar.jsx` | Renders the page title, theme/sidebar controls, notifications, and account menu. |
-| `src/components/layout/MaterialIcon.jsx` | Renders a Material Symbols icon with the existing styles. |
-| `src/pages/dashboard/AccessDenied.jsx` | Displays Unauthorized access for a valid user with the wrong role. |
-| `src/pages/dashboard/DashboardPlaceholder.jsx` | Displays the project's existing planned-feature pages. No feature was replaced during the refactor. |
+| `src/router.jsx` | Lists every public, dashboard, wildcard, and Unauthorized route explicitly. |
+| `src/auth/ProtectedRoute.jsx` | Reads `authToken`, validates it, compares roles, and renders its children only when allowed. |
+| `src/auth/jwt.js` | Shared JWT structure, expiration, and role checks used by Login and the route guard. |
+| `src/auth/login.js` | Validates the login response, maps safe backend errors, saves the session, and returns its dashboard path. |
+| `src/auth/session.js` | Keeps the session synchronized with localStorage, handles logout/expiration, and clears the actual QueryClient. |
+| `src/auth/useAuth.js` | Subscribes React components to the same session that Axios uses. |
+| `src/api/client.js` | One Axios instance with the API base URL, JWT header, and HTTP 401/403 handling. |
+| `src/api/account.js` | Five short account API functions with visible methods and endpoint paths. |
+| `src/api/queryClient.js` | The shared React Query client; automatic retries are disabled. |
+| `src/main.jsx` | Provides that QueryClient to the application. |
+| `src/pages/login/Login.jsx` | Existing login design, form validation, mutation, loading state, and safe alerts. |
+| `src/pages/register/Register.jsx` | Patient registration form and its existing success dialog/redirect. |
+| `src/pages/docregister/DoctorRegister.jsx` | Doctor registration form, specialization, and success dialog. |
+| `src/pages/sendcode/SendCode.jsx` | Sends/resends reset codes and carries the email to Reset Password. |
+| `src/pages/reset/ResetPassword.jsx` | Handles code entry, keyboard/paste behavior, and the password-reset mutation. |
+| `src/validations/authSchemas.js` | Existing Yup schemas and messages, unchanged. |
+| `src/layouts/DashboardLayout.jsx` | Existing sidebar, navbar, responsive drawers, theme controls, and nested Outlet. |
+| `src/config/navigation.js` | Role-specific sidebar items; these no longer generate routes. |
+| `src/config/theme.js` | Existing dashboard theme, reused by the 403/404 screens. |
+| `src/pages/NotFound.jsx` | Frontend 404 screen for unknown URLs. |
+| `src/pages/dashboard/AccessDenied.jsx` | Public `/unauthorized` screen, containing no protected dashboard content. |
+| `src/components/layout/ErrorPage.jsx` | The small shared MUI presentation for both error screens. |
 
-## How login works
+## Login and route protection
 
-1. `Login.jsx` validates the form through React Hook Form and Yup.
-2. `handleLogin` clears the previous error and calls `signIn` in `auth/login.js`.
-3. The existing Axios client makes one POST request to `/Account/Login`.
-4. A response must have `success: true` and a token. Other results are mapped to
-   the existing invalid-credentials, locked-account, confirmation, or general error.
-5. The token is checked for valid claims, future expiration, and one supported role.
-6. The session store saves the validated token as `localStorage.authToken` and
-   notifies the components that authentication has changed.
-7. React Router replaces the login history entry with the role's dashboard.
+1. The form validates with `useForm`, `yupResolver`, and the existing Yup schema.
+2. Its `useMutation` calls the login logic with form data.
+3. `loginUser` sends one POST to `/Account/Login` through the Axios instance.
+4. Login requires `success: true` and a structurally valid, unexpired token with
+   exactly one supported role. It saves only that validated token as `authToken`.
+5. Login navigates with `replace: true` to `/patient`, `/doctor`, or `/admin`.
 
-| Role | Dashboard and protected route tree |
-| --- | --- |
-| Patient | `/patient` and `/patient/*` |
-| Doctor | `/doctor` and `/doctor/*` |
-| Admin | `/admin` and `/admin/*` |
+`ProtectedRoute` uses the same JWT validator. It reads the stored token, then
+uses ordinary conditions:
 
-After refresh, the store restores and checks the saved token before protected
-content renders. Missing or invalid authentication redirects to `/login`. A valid
-user visiting another role's URL sees Unauthorized. Logout, expiry, and matching
-HTTP 401 responses clear the session and saved token. HTTP 403 shows forbidden
-access without changing the role. No automatic login retries were added.
+- No valid token: `/login`.
+- Valid token, wrong required role: `/unauthorized`.
+- Valid token and matching role: render the supplied children.
 
-## What became simpler
+A small synchronization effect keeps the existing session store and Axios in
+agreement with storage before rendering dashboard content. Role claims support
+ASP.NET Core's URI claim, `role`, `roles`, arrays, and comma-separated strings.
+Missing, malformed, unsupported, conflicting, and expired claims remain rejected.
 
-- Long one-line JSX is expanded so the component tree is easy to follow.
-- Nested alert and password-strength ternaries are ordinary `if/else` blocks.
-- Form and menu actions have named handlers such as `handleLogin`,
-  `handleRegisterDoctor`, `handleToggleSidebar`, and `closeProfileMenu`.
-- Role extraction uses explicit loops rather than chained `flatMap` operations.
-- Session operations are named functions with the same state changes as before.
-- Reset-code typing, paste, and arrow-key handlers are separate named functions
-  rather than functions buried inside the form renderer.
-- Validation chains are consistently formatted. The rules and messages are unchanged.
+Refresh restores the saved session. Logout, expiry, and a matching HTTP 401
+response clear authentication and the query cache. HTTP 403 shows Unauthorized
+without changing the user's role. Existing version checks keep old requests from
+changing a newer user's session.
 
-Existing folders and component responsibilities stay the same. Files that were
-already simple were left alone. No libraries or service layers were added.
+Invalid credentials and locked accounts use error alerts; unconfirmed email uses
+a warning. Unknown failures and network errors use the existing safe messages.
+There are no client-side attempt counters or automatic login retries.
 
-## Why some advanced pieces remain
+## React Query and Yup have different jobs
 
-- **`useSyncExternalStore`:** the session lives outside React so Axios can also
-  access it. This hook subscribes React components to that same session without
-  making a second, potentially outdated copy.
-- **Session version numbers:** an old login or API response must not replace or
-  log out a newer session. Each request remembers which session it belongs to.
-- **JWT parsing and duplicate checks:** conflicting claims must be rejected.
-  Removing these checks would change security behavior.
-- **`Object.freeze` and new snapshots:** components must see a consistent session
-  and receive a new snapshot when it changes.
-- **Axios interceptors:** existing requests share the same header and error rules,
-  including keeping the bearer token on the configured API origin/base path.
-- **React Hook Form `Controller` and `useRef`:** preserve controlled inputs,
-  validation, and focus movement between reset-code boxes.
-- **Theme `useMemo`:** prevents rebuilding the theme when only a menu/drawer changes.
-- **The browser-test protocol code:** drives Chrome/Edge without adding a testing
-  library. It is test infrastructure, not part of the frontend delivered to users.
+- React Query manages requests through `useMutation` and `mutateAsync`.
+- React Hook Form manages fields, errors, and submission state.
+- Yup validates exactly the same fields and rules as before.
+- The form's existing `isSubmitting` stays active while `mutateAsync` is awaited,
+  preserving button disabling, loading indicators, dialogs, and try/catch handling.
 
-Client-side decoding does not verify a JWT signature. The ASP.NET Core backend
-must enforce authentication, role authorization, ownership, and Doctor approval.
-Those backend rules were not changed or independently tested during this refactor.
+There are currently no implemented GET/data-fetching pages. No artificial GET
+request was added to a placeholder just to use `useQuery`. Future real GET
+features should use `useQuery` with this same QueryClient.
 
-## Check the project
+Mutation retries are disabled. Offline requests still attempt once and show the
+existing network error rather than being silently queued. Request/cache state
+is not persisted to browser storage. Only the existing JWT and theme preference
+use localStorage.
+
+## Real account endpoints
+
+All functions below are in `src/api/account.js` and use the same Axios instance.
+
+| Function | Method and endpoint | Consumer |
+| --- | --- | --- |
+| `loginUser(data)` | POST `/Account/Login` | `auth/login.js`, called by `Login.jsx` |
+| `registerPatient(data)` | POST `/Account/RegisterPatient` | `Register.jsx` |
+| `registerDoctor(data)` | POST `/Account/RegisterDoctor` | `DoctorRegister.jsx` |
+| `sendCode(data)` | POST `/Account/SendCode` | `SendCode.jsx`, including resend |
+| `resetPassword(data)` | PATCH `/Account/ResetPassword` | `ResetPassword.jsx` |
+
+## 404 and 403 screens
+
+Unknown top-level URLs show `404 — Page Not Found` and keep their URL. Unknown
+Patient/Doctor/Admin child routes check authentication and role first. Only an
+authorized user sees that role's wildcard 404; no dashboard shell is displayed.
+A wrong-role visitor goes to `/unauthorized`, and an unauthenticated visitor goes
+to Login.
+
+`/unauthorized` shows `403 — Access Denied`. Both error pages have a working
+`Go to Login` link and use the existing light/dark theme. These are frontend
+screens, not evidence of HTTP status codes returned by the hosting server.
+
+## Checks
 
 ```powershell
 npm run lint
@@ -132,28 +121,19 @@ npm test
 npm run test:browser
 ```
 
-Browser tests use hidden Chrome/Edge, synthetic tokens, and intercepted responses.
-They do not send live login, registration, or password-reset requests. Set
-`CHROME_PATH` if the browser is installed outside the runner's default locations.
+Tests use synthetic JWTs, Axios adapters, and intercepted browser responses.
+No live backend login, registration, or password-reset requests are sent. Browser
+tests require Chrome/Edge or `CHROME_PATH`. Optional screenshot comparisons use
+`REFACTOR_SNAPSHOTS` and `REFACTOR_COMPARE=1` under matching browser/font conditions.
 
-The browser runner covers login results, all roles, persistence, refresh, logout,
-401/403, wrong-role and history navigation, all patient links, sidebar modes,
-navbar menus, theme persistence, password-strength labels, and reset-code entry.
-It also supports optional local screenshot recording/comparison using the
-`REFACTOR_SNAPSHOTS` folder and `REFACTOR_COMPARE=1`. Reference screenshots are
-kept outside the source tree. Comparisons require the same browser/font conditions.
+The existing visible-password toggle behavior and page-local styling are
+preserved. Yup was not replaced with Zod. No new dashboard features or backend
+changes are included.
 
-## Behavior deliberately preserved
+JWT signature verification, server-side roles/ownership, account lockout rules,
+and Doctor approval remain backend responsibilities, not client-side guarantees.
+A Doctor role alone does not confirm approval. See `docs/authentication.md` for
+additional authentication details.
 
-This task changes code readability, including the test's password selector, not
-application behavior. The current login password input starts visible and the
-existing toggle expression was preserved. Existing differences between visual
-password-strength checks and validation rules were also preserved.
-
-The controlled browser tests block external fonts. With fallback icon text, the
-original 320px dashboard extends to 372px; this same baseline is preserved.
-Screenshot comparisons test the controlled font environment, not every OS,
-loaded-font configuration, viewport, or interactive state.
-
-Full real-backend form submissions and backend security enforcement were not
-verified. See `docs/authentication.md` for the existing login behavior details.
+React Query references: [mutations](https://tanstack.com/query/latest/docs/framework/react/guides/mutations),
+[QueryClient](https://tanstack.com/query/latest/docs/reference/QueryClient).

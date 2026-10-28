@@ -60,6 +60,7 @@ let passed = 0;
 let synthetic = { status: 200, body: {} };
 let loginRequests = 0;
 let submittedHistory;
+const accountRequests = [];
 const failures = [];
 const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
 const token = claims => `${encode({alg:'HS256',typ:'JWT'})}.${encode({exp:Math.floor(Date.now()/1000)+600,...claims})}.c2ln`;
@@ -107,6 +108,16 @@ try {
     await submit({status:200,body:{success:true,token:token({[roleClaim]:role,...claims})}});
     await check(`location.pathname === '/${role.toLowerCase()}' && !!document.querySelector('nav')`, `${role} login redirect and protected dashboard`);
   }
+  async function fillField(name, value) {
+    const selector = `input[name="${name}"]`;
+    await evaluate(`document.querySelector(${JSON.stringify(selector)}).focus()`);
+    await send('Input.insertText', { text: String(value) });
+  }
+  async function selectOption(name, value) {
+    await evaluate(`document.querySelector('input[name="${name}"]').closest('.MuiInputBase-root').querySelector('[role="combobox"]').dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))`);
+    await check(`!!document.querySelector('[role="option"][data-value="${value}"]')`, `${name} options available`);
+    await evaluate(`document.querySelector('[role="option"][data-value="${value}"]').click()`);
+  }
   async function captureAppearance(name) {
     if (!process.env.REFACTOR_SNAPSHOTS) return;
     await evaluate('document.activeElement?.blur()');
@@ -148,6 +159,11 @@ try {
         await send('Fetch.fulfillRequest',{requestId,responseCode:status,responseHeaders:headers,body:Buffer.from('{}').toString('base64')});
         return;
       }
+      if (['/Account/RegisterPatient', '/Account/RegisterDoctor', '/Account/SendCode', '/Account/ResetPassword'].some(path => url.pathname.endsWith(path))) {
+        accountRequests.push({ path: url.pathname, method: request.method, data: JSON.parse(request.postData) });
+        await send('Fetch.fulfillRequest', { requestId, responseCode: 200, responseHeaders: headers, body: Buffer.from(JSON.stringify({ success: true, message: 'Synthetic success' })).toString('base64') });
+        return;
+      }
       // Block all other external requests, including fonts: no live backend access.
       await send('Fetch.fulfillRequest',{requestId,responseCode:200,responseHeaders:headers,body:''});
     } catch { failures.push('Request interception failed'); }
@@ -160,6 +176,17 @@ try {
     await navigate(path);
     await check(`location.pathname === '/login' && !document.querySelector('nav')`, `${path}: direct unauthenticated URL rejected`);
   }
+  for (const path of ['/anything123', '/unknown-page']) {
+    await navigate(path);
+    await check(`location.pathname === '${path}' && document.querySelector('h1')?.textContent.includes('Page Not Found') && !document.querySelector('nav')`, `${path}: public NotFound`);
+    await evaluate(`document.querySelector('a[href="/login"]').click()`);
+    await check(`location.pathname === '/login'`, '404 Go to Login works');
+  }
+  for (const badToken of ['malformed', token({ role: 'Patient', exp: 1 }), token({ role: 'Patient,Admin' })]) {
+    await evaluate(`localStorage.setItem('authToken', ${JSON.stringify(badToken)})`);
+    await spa('/patient/readings');
+    await check(`location.pathname === '/login' && localStorage.getItem('authToken') === null && !document.querySelector('nav')`, 'invalid saved JWT rejected before protected content');
+  }
   for(const role of ['Patient','Doctor','Admin']) {
     await login(role);
     const home=`/${role.toLowerCase()}`;
@@ -170,11 +197,25 @@ try {
     passed++; console.log(`PASS ${role}: login uses history replacement`);
     for(const other of ['patient','doctor','admin'].filter(value=>`/${value}`!==home)) {
       await spa(`/${other}`);
-      await check(`document.querySelector('h1')?.textContent === 'Unauthorized access' && !document.querySelector('nav')`, `${role} cannot open /${other}`);
-      await evaluate(`document.querySelector('a[href="${home}"]').click()`);
+      await check(`location.pathname === '/unauthorized' && document.querySelector('h1')?.textContent.includes('Access Denied') && !document.querySelector('nav')`, `${role} cannot open /${other}`);
+      await evaluate(`document.querySelector('a[href="/login"]').click()`);
+      await check(`location.pathname === '/login'`, `${role}: 403 Go to Login works`);
+      await spa(home);
       await check(`location.pathname === '${home}' && !!document.querySelector('nav')`, `${role} returns only to own dashboard`);
+      await spa(`/${other}/not-existing-page`);
+      await check(`location.pathname === '/unauthorized' && !document.querySelector('nav')`, `${role}: wrong-role wildcard is protected before NotFound`);
+      await evaluate(`document.querySelector('a[href="/login"]').click()`);
+      await check(`location.pathname === '/login'`, 'wrong-role wildcard Go to Login');
+      await spa(home);
+      await check(`location.pathname === '${home}' && !!document.querySelector('nav')`, 'return to own role after wildcard denial');
     }
     await check(`[...document.querySelectorAll('nav a')].every(a=>a.pathname==='${home}'||a.pathname.startsWith('${home}/'))`, `${role} navigation contains only its own routes`);
+    await spa(home + '/not-existing-page');
+    await check(`location.pathname === '${home}/not-existing-page' && document.querySelector('h1')?.textContent.includes('Page Not Found') && !document.querySelector('nav')`, `${role}: authorized unknown child shows NotFound`);
+    await evaluate(`document.querySelector('a[href="/login"]').click()`);
+    await check(`location.pathname === '/login'`, `${role}: protected 404 Go to Login works`);
+    await spa(home);
+    await check(`location.pathname === '${home}' && !!document.querySelector('nav')`, `${role}: existing dashboard remains available`);
   }
   await login('Patient');
   const savedToken=synthetic.body.token;
@@ -207,12 +248,16 @@ try {
   await spa('/patient/readings');
   await check(`document.querySelector('main h2')?.textContent==='Health Readings'`, 'patient nested Outlet remains functional');
   await spa('/doctor');
-  await check(`document.querySelector('h1')?.textContent==='Unauthorized access'`, 'manual cross-role navigation rejected');
+  await check(`location.pathname==='/unauthorized' && document.querySelector('h1')?.textContent.includes('Access Denied')`, 'manual cross-role navigation rejected');
   await evaluate('history.back()');
   await check(`location.pathname==='/patient/readings' && !!document.querySelector('nav')`, 'Back returns to allowed content');
   await evaluate('history.forward()');
-  await check(`location.pathname==='/doctor' && document.querySelector('h1')?.textContent==='Unauthorized access' && !document.querySelector('nav')`, 'Forward cannot bypass wrong-role guard');
-  await evaluate(`document.querySelector('button').click()`);
+  await check(`location.pathname==='/unauthorized' && document.querySelector('h1')?.textContent.includes('Access Denied') && !document.querySelector('nav')`, 'Forward cannot bypass wrong-role guard');
+  await evaluate(`document.querySelector('a[href="/login"]').click()`);
+  await check(`location.pathname==='/login'`, '403 Go to Login works');
+  await spa('/patient');
+  await check(`!!document.querySelector('nav')`, 'return to valid Patient session');
+  await evaluate(`document.querySelector('[aria-label="Log out"]').click()`);
   await check(`location.pathname==='/login' && !document.querySelector('nav')`, 'logout clears session and returns to login');
   await evaluate('history.back()');
   await check(`location.pathname==='/login' && !document.querySelector('nav')`, 'Back after logout cannot restore protected content');
@@ -268,8 +313,10 @@ try {
   }
   await login('Patient');
   await evaluate(`(async()=>{const {api}=await import('/src/api/client.js');try{await api.get('/Synthetic403');}catch{}})()`);
-  await check(`document.querySelector('h1')?.textContent==='Unauthorized access' && !document.querySelector('nav')`, 'HTTP 403 shows forbidden access without another role');
-  await evaluate(`document.querySelector('a[href="/patient"]').click()`);
+  await check(`location.pathname==='/unauthorized' && document.querySelector('h1')?.textContent.includes('Access Denied') && !document.querySelector('nav')`, 'HTTP 403 shows forbidden access without another role');
+  await evaluate(`document.querySelector('a[href="/login"]').click()`);
+  await check(`location.pathname==='/login'`, 'HTTP 403 Go to Login works');
+  await spa('/patient');
   await check(`location.pathname==='/patient' && !!document.querySelector('nav')`, 'HTTP 403 retains the same Patient session');
   await evaluate(`(async()=>{const {api}=await import('/src/api/client.js');try{await api.get('/Synthetic401');}catch{}})()`);
   await check(`location.pathname==='/login' && !document.querySelector('nav') && document.querySelector('[role="alert"]')?.textContent.includes('expired')`, 'HTTP 401 invalidates the session');
@@ -320,6 +367,60 @@ try {
     await send('Input.insertText', { text: 'Abc123!xyz' });
     await check(`[...document.querySelectorAll('p')].some(element => element.textContent === 'Strong')`, `${path}: strong password indicator`);
   }
+  for (const path of ['/register', '/docregister']) {
+    await navigate(path);
+    const fields = { fullName: 'Synthetic User', userName: 'synthetic.user', email: 'synthetic@example.invalid', password: 'Synthetic1!', confirmPassword: 'Synthetic1!' };
+    if (path === '/register') {
+      Object.assign(fields, { phoneNumber: '0512345678', city: 'Nablus', age: '26', height: '170', weight: '70' });
+    } else {
+      fields.certificate = 'Synthetic certificate';
+    }
+    for (const [name, value] of Object.entries(fields)) {
+      await fillField(name, value);
+    }
+    await evaluate(`(() => { const input = document.querySelector('input[name="dateOfBirth"]'); const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; setter.call(input, '2000-01-01'); input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+    await selectOption('gender', 'Male');
+    if (path === '/docregister') await selectOption('specialization', 'Cardiology');
+    const before = accountRequests.length;
+    await evaluate(`document.querySelector('button[type="submit"]').click()`);
+    await check(`document.querySelector('[role="dialog"]')?.textContent.includes('successfully')`, `${path}: mutation shows the existing success dialog`);
+    assert.equal(accountRequests.length, before + 1, 'one registration request');
+    const request = accountRequests.at(-1);
+    assert.equal(request.method, 'POST');
+    assert.ok(request.path.endsWith(path === '/register' ? '/Account/RegisterPatient' : '/Account/RegisterDoctor'));
+    assert.equal(request.data.email, 'synthetic@example.invalid');
+    assert.equal(request.data.dateOfBirth, '2000-01-01');
+    assert.equal(request.data.gender, 'Male');
+    if (path === '/register') assert.equal(request.data.height, 170);
+    else assert.equal(request.data.specialization, 'Cardiology');
+    passed++;
+    console.log(`PASS ${path}: correct endpoint, method, Yup-transformed body, and single request`);
+  }
+  await navigate('/sendcode');
+  await fillField('email', 'synthetic@example.invalid');
+  let before = accountRequests.length;
+  await evaluate(`document.querySelector('button[type="submit"]').click()`);
+  await check(`[...document.querySelectorAll('button')].some(button => button.textContent.includes('Resend Email'))`, 'send-code mutation shows the existing success state');
+  assert.equal(accountRequests.length, before + 1);
+  assert.ok(accountRequests.at(-1).path.endsWith('/Account/SendCode'));
+  assert.equal(accountRequests.at(-1).method, 'POST');
+  assert.deepEqual(accountRequests.at(-1).data, { email: 'synthetic@example.invalid' });
+  before = accountRequests.length;
+  await evaluate(`[...document.querySelectorAll('button')].find(button => button.textContent.includes('Resend Email')).click()`);
+  await until(() => accountRequests.length === before + 1, 'single resend request');
+  await evaluate(`[...document.querySelectorAll('button')].find(button => button.textContent.includes('Continue to Reset Password')).click()`);
+  await check(`location.pathname === '/resetpassword' && document.querySelector('input[name="email"]')?.value === 'synthetic@example.invalid'`, 'send-code flow keeps the email for password reset');
+  await fillField('newPassword', 'Synthetic1!');
+  await evaluate(`(() => { const input = document.querySelector('[aria-label="Verification digit 1"]'); const data = new DataTransfer(); data.setData('text', '12345'); input.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true })); })()`);
+  before = accountRequests.length;
+  await evaluate(`document.querySelector('button[type="submit"]').click()`);
+  await check(`document.body.textContent.includes('Password Reset Successful!')`, 'reset-password mutation shows the existing success state');
+  assert.equal(accountRequests.length, before + 1);
+  assert.ok(accountRequests.at(-1).path.endsWith('/Account/ResetPassword'));
+  assert.equal(accountRequests.at(-1).method, 'PATCH');
+  assert.deepEqual(accountRequests.at(-1).data, { email: 'synthetic@example.invalid', code: '12345', newPassword: 'Synthetic1!' });
+  passed++;
+  console.log('PASS send-code, resend, and password reset use the original request contracts');
   assert.deepEqual(failures,[],'no uncaught browser exceptions or interception errors');
   console.log(`\n${passed} browser checks passed. All API responses were synthetic; no live login requests were sent.`);
 } finally {

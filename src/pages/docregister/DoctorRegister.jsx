@@ -1,5 +1,6 @@
 
 import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import {
   Alert,
   Box,
@@ -26,7 +27,7 @@ import {
 
 import { yupResolver } from "@hookform/resolvers/yup";
 import { Link, useNavigate } from "react-router-dom";
-import { api } from "../../api/client.js";
+import { registerDoctor } from "../../api/account.js";
 
 import { docregisterSchema } from "../../validations/authSchemas";
 
@@ -202,6 +203,8 @@ export default function DoctorRegister() {
   const [showConfirmPassword, setShowConfirmPassword] =
     useState(false);
 
+  const request = useMutation({ mutationFn: registerDoctor, retry: false });
+
   const navigate = useNavigate();
 
   const {
@@ -231,10 +234,7 @@ export default function DoctorRegister() {
     setServerError(null);
 
     try {
-      await api.post(
-        "/Account/RegisterDoctor",
-        data
-      );
+      await request.mutateAsync(data);
 
       setSuccess(true);
       setOpenSuccess(true);

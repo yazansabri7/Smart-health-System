@@ -1,4 +1,5 @@
 import { AuthError, validateToken } from './jwt.js';
+import { queryClient } from '../api/queryClient.js';
 
 export function createSessionStore(options = {}) {
   const {
@@ -162,4 +163,4 @@ export function createSessionStore(options = {}) {
   return store;
 }
 
-export const authSession = createSessionStore();
+export const authSession = createSessionStore({ queryClient });

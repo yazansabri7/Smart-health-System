@@ -9,22 +9,9 @@ import PatientLayout from './layouts/PatientLayout';
 import DoctorLayout from './layouts/DoctorLayout';
 import AdminLayout from './layouts/AdminLayout';
 import DashboardPlaceholder from './pages/dashboard/DashboardPlaceholder';
-import { patientNavigation, doctorNavigation, adminNavigation } from './config/navigation';
+import AccessDenied from './pages/dashboard/AccessDenied';
+import NotFound from './pages/NotFound';
 import ProtectedRoute from './auth/ProtectedRoute';
-
-function dashboardRoutes(navigation, role) {
-  return navigation.map((item, index) => {
-    const route = {
-      element: <DashboardPlaceholder title={item.label} icon={item.icon} role={role} />,
-    };
-    if (index === 0) {
-      route.index = true;
-    } else {
-      route.path = item.path.split('/').pop();
-    }
-    return route;
-  });
-}
 
 const router = createBrowserRouter([
   {
@@ -40,44 +27,83 @@ const router = createBrowserRouter([
     ],
   },
   {
-    element: <ProtectedRoute role="Patient" />,
+    path: '/patient',
     children: [
       {
-        path: '/patient',
-        element: <PatientLayout />,
+        element: (
+          <ProtectedRoute role="Patient">
+            <PatientLayout />
+          </ProtectedRoute>
+        ),
         children: [
-          ...dashboardRoutes(patientNavigation, 'Patient'),
-          { path: '*', element: <DashboardPlaceholder title="Page not found" /> },
+          { index: true, element: <DashboardPlaceholder title="Dashboard" icon="dashboard" role="Patient" /> },
+          { path: 'readings', element: <DashboardPlaceholder title="Health Readings" icon="monitor_heart" role="Patient" /> },
+          { path: 'medications', element: <DashboardPlaceholder title="Medications" icon="medication" role="Patient" /> },
+          { path: 'doctors', element: <DashboardPlaceholder title="My Doctors" icon="medical_services" role="Patient" /> },
+          { path: 'messages', element: <DashboardPlaceholder title="Messages" icon="chat" role="Patient" /> },
+          { path: 'alerts', element: <DashboardPlaceholder title="Alerts" icon="notifications" role="Patient" /> },
+          { path: 'predictions', element: <DashboardPlaceholder title="AI Predictions" icon="psychology" role="Patient" /> },
+          { path: 'profile', element: <DashboardPlaceholder title="Profile" icon="person" role="Patient" /> },
         ],
+      },
+      {
+        path: '*',
+        element: (
+          <ProtectedRoute role="Patient">
+            <NotFound />
+          </ProtectedRoute>
+        ),
       },
     ],
   },
   {
-    element: <ProtectedRoute role="Doctor" />,
+    path: '/doctor',
     children: [
       {
-        path: '/doctor',
-        element: <DoctorLayout />,
+        element: (
+          <ProtectedRoute role="Doctor">
+            <DoctorLayout />
+          </ProtectedRoute>
+        ),
         children: [
-          ...dashboardRoutes(doctorNavigation, 'Doctor'),
-          { path: '*', element: <DashboardPlaceholder title="Page not found" role="Doctor" /> },
+          { index: true, element: <DashboardPlaceholder title="Dashboard" icon="dashboard" role="Doctor" /> },
         ],
+      },
+      {
+        path: '*',
+        element: (
+          <ProtectedRoute role="Doctor">
+            <NotFound />
+          </ProtectedRoute>
+        ),
       },
     ],
   },
   {
-    element: <ProtectedRoute role="Admin" />,
+    path: '/admin',
     children: [
       {
-        path: '/admin',
-        element: <AdminLayout />,
+        element: (
+          <ProtectedRoute role="Admin">
+            <AdminLayout />
+          </ProtectedRoute>
+        ),
         children: [
-          ...dashboardRoutes(adminNavigation, 'Admin'),
-          { path: '*', element: <DashboardPlaceholder title="Page not found" role="Admin" /> },
+          { index: true, element: <DashboardPlaceholder title="Dashboard" icon="dashboard" role="Admin" /> },
         ],
+      },
+      {
+        path: '*',
+        element: (
+          <ProtectedRoute role="Admin">
+            <NotFound />
+          </ProtectedRoute>
+        ),
       },
     ],
   },
+  { path: '/unauthorized', element: <AccessDenied /> },
+  { path: '*', element: <NotFound /> },
 ]);
 
 export default router;
