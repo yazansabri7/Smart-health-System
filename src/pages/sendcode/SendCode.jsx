@@ -1,5 +1,6 @@
 
 import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 
 import {
   Alert,
@@ -17,7 +18,7 @@ import {
 import { useForm } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
 import { Link, useNavigate } from "react-router-dom";
-import { api } from "../../api/client.js";
+import { sendCode } from "../../api/account.js";
 
 import { sendSchema } from "../../validations/authSchemas";
 
@@ -96,6 +97,8 @@ export default function SendCode() {
   const [success, setSuccess] = useState(false);
   const [sentEmail, setSentEmail] = useState("");
 
+  const request = useMutation({ mutationFn: sendCode, retry: false });
+
   const navigate = useNavigate();
 
   const {
@@ -114,10 +117,7 @@ export default function SendCode() {
     setServerError(null);
 
     try {
-      await api.post(
-        "/Account/SendCode",
-        data
-      );
+      await request.mutateAsync(data);
 
       setSentEmail(data.email);
       setSuccess(true);
@@ -135,10 +135,7 @@ export default function SendCode() {
     setServerError(null);
 
     try {
-      await api.post(
-        "/Account/SendCode",
-        { email: sentEmail }
-      );
+      await request.mutateAsync({ email: sentEmail });
     } catch {
       setServerError(
         "Unable to resend the code. Please try again."

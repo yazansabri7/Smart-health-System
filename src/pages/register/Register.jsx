@@ -1,5 +1,6 @@
 
 import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import {
   Alert,
   Box,
@@ -28,7 +29,7 @@ import { useForm } from "react-hook-form";
 import { Link, useNavigate } from "react-router-dom";
 import { registerSchema } from "../../validations/authSchemas";
 import { yupResolver } from "@hookform/resolvers/yup";
-import { api } from "../../api/client.js";
+import { registerPatient } from "../../api/account.js";
 
 // Google Material Symbols - no @mui/icons-material imports
 function MaterialIcon({ name, sx = {} }) {
@@ -185,6 +186,8 @@ export default function Register() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
+  const request = useMutation({ mutationFn: registerPatient, retry: false });
+
   const navigate = useNavigate();
 
   const {
@@ -199,10 +202,7 @@ export default function Register() {
 
   async function handleRegister(data) {
     try {
-      await api.post(
-        "/Account/RegisterPatient",
-        data
-      );
+      await request.mutateAsync(data);
       setOpenSuccess(true);
 
       setTimeout(() => {

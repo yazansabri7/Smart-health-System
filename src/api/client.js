@@ -39,4 +39,4 @@ export function createApiClient(baseURL, store = authSession) {
   return api;
 }
 
-export const api = createApiClient(import.meta.env?.VITE_API_BASE_URL || '');
+export const api = createApiClient(import.meta.env?.VITE_BASE_URL || '');

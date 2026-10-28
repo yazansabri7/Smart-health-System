@@ -1,5 +1,6 @@
 
 import { useRef, useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 
 import {
   Alert,
@@ -21,7 +22,7 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
-import { api } from "../../api/client.js";
+import { resetPassword } from "../../api/account.js";
 
 import { resetSchema } from "../../validations/authSchemas";
 
@@ -119,6 +120,8 @@ const passwordRules = [
 ];
 
 export default function ResetPassword() {
+  const request = useMutation({ mutationFn: resetPassword, retry: false });
+
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -150,10 +153,7 @@ export default function ResetPassword() {
     setServerError(null);
 
     try {
-      await api.patch(
-        "/Account/ResetPassword",
-        data
-      );
+      await request.mutateAsync(data);
       setSuccess(true);
     } catch (err) {
       setServerError(

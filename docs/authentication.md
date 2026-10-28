@@ -1,49 +1,84 @@
-# Login and authentication
+﻿# Authentication
 
-The existing login form and MUI design are preserved. No authentication libraries
-were added. The existing Axios client, JWT helper, session store and role guards
-are reused.
+The frontend uses React Query mutations for account requests, React Hook Form
+for form state, and the unchanged Yup schemas through yupResolver. The API
+functions are in `src/api/account.js`; the shared Axios instance reads
+`import.meta.env.VITE_BASE_URL`.
 
-`POST /Account/Login` sends email and password once. A response must contain
-`success: true` and a valid `token`. The existing JWT helper checks expiration
-and requires one recognized role: Patient, Doctor, or Admin. Only then is the
-JWT saved to localStorage as `authToken`, and React Router navigates to the
-matching dashboard using `replace: true`.
+## Successful login
 
-Both HTTP 200 failure responses and Axios HTTP 400 response bodies are handled
-by their backend `message`:
+A single POST `/Account/Login` sends `{ email, password }`. The backend response
+must have `success: true` and a top-level `token`.
 
-| Backend message | Alert |
-| --- | --- |
-| Invalid email or password | Invalid email or password. |
-| Account is locked out , please try again later | Your account is temporarily locked. Please try again later. |
-| Account is locked duo to multiple failed login attempts | Your account is temporarily locked. Please try again later. |
-| Email is not confirmed , please confirm your email | Please confirm your email before logging in. (warning) |
-| Login failed or an unknown error | Login failed. Please try again. |
-| No HTTP response | Unable to connect to the server. |
+The existing validator rejects malformed JWTs, duplicate top-level claims,
+invalid or expired expiration, missing/unsupported roles, and conflicting roles.
+It reads `role`, `roles`, and
+`http://schemas.microsoft.com/ws/2008/06/identity/claims/role`. String arrays and
+comma-separated values are supported; duplicates of the same normalized role
+are allowed, but multiple different roles are rejected.
 
-Errors clear when a new request starts. The submit button is disabled and shows
-loading while submitting. There are no automatic retries or React login-attempt
-counters. ASP.NET Core Identity is responsible for lockout. Login only requires
-a nonempty password; registration password rules do not restrict existing logins.
+Only after validation does the session store save the JWT as `authToken` in
+localStorage and notify components. Login uses history replacement to navigate
+to `/patient`, `/doctor`, or `/admin`. It never guesses a role or trusts a return
+URL, query parameter, or response-level role field.
 
-Authentication restores from `authToken` before protected routes render. An
-invalid or expired saved token is removed. Logout, expiry, failed login, and
-HTTP 401 clear authentication and the saved token. HTTP 403 shows forbidden
-access without changing the user's role. Other tabs respond to storage changes.
-Only the token's validated role determines access:
+## Failed login
 
-- `/patient/*`: Patient
-- `/doctor/*`: Doctor
-- `/admin/*`: Admin
+Both successful HTTP responses with `success: false` and Axios error response
+bodies are checked for the backend's message. Invalid credentials, both lockout
+messages, unconfirmed email, general failure, and network failure retain their
+existing safe English text. Unconfirmed email uses a warning Alert; other login
+failures use an error Alert. No raw exception details are displayed.
 
-A missing valid token redirects to `/login`; a wrong role shows Unauthorized.
-Other role values in storage, query strings, or return URLs are ignored.
+No automatic retry, fallback role, mock authentication, client-side attempt
+counter, or alternate authentication method is used. React Query's mutation
+network mode is always, preserving a single immediate network attempt even when
+the browser reports offline. ASP.NET Core Identity controls lockout.
 
-Run `npm test`, `npm run test:browser`, `npm run lint`, and `npm run build`.
-Browser tests require Chrome/Edge (or `CHROME_PATH`). They use synthetic tokens
-and intercept every external request, so no live login attempts are made.
+## Protected routes and error screens
 
-Frontend JWT decoding is not signature verification. Backend JWT validation,
-role authorization, resource ownership checks, and Doctor approval rules remain
-backend responsibilities and have not been independently verified here.
+The explicit createBrowserRouter routes wrap their layouts in
+`<ProtectedRoute role="Patient"><PatientLayout /></ProtectedRoute>` (and the
+matching Doctor/Admin variants).
+
+The guard reads `localStorage.authToken` and uses the same validator as Login.
+Invalid/missing/expired JWTs go to `/login`; a different valid role or HTTP 403
+state goes to `/unauthorized`. Matching roles render children after session
+synchronization. The layouts continue rendering their nested Outlet.
+
+Unknown public URLs show the NotFound page. Each role also has its own protected
+wildcard: an authorized user sees NotFound, an unauthenticated user goes to Login,
+and a different role goes to Unauthorized. Wildcard screens do not render the
+protected dashboard layout. Both 403/404 pages have `Go to Login` links.
+
+The frontend 404/403 screens do not prove the hosting server returns those HTTP
+status codes.
+
+## Session and cache behavior
+
+Refresh restores and validates the saved token before protected content renders.
+Logout, expiration, invalid saved tokens, failed login, and matching HTTP 401
+responses clear the token/session and shared query cache. HTTP 403 retains the
+same session and cache while displaying access denied.
+
+The application QueryClient is shared by QueryClientProvider and the existing
+session store. No separate cache is cleared. Cache and mutation data are not
+persisted. Session-version checks prevent stale login or HTTP responses from
+changing a newer session. Window focus, visibility, pageshow, and storage events
+continue keeping the session synchronized.
+
+`useSyncExternalStore`, expiry timers, strict JWT parsing, and request-version
+checks remain because they prevent stale state and unauthorized content from
+appearing. These checks were not removed to shorten the guard.
+
+## Verification boundary
+
+Unit tests use synthetic JWTs and Axios adapters. Browser tests intercept all
+external requests, including account operations. Registration, send/resend code,
+and password reset are checked through real forms using synthetic responses.
+No live login or backend authorization tests were performed.
+
+Frontend JWT decoding is not signature verification. Backend signature/algorithm,
+issuer/audience, expiration, role authorization, patient ownership, doctor-patient
+access, and Doctor approval enforcement remain unverified backend requirements.
+Do not treat a Doctor JWT role as confirmation of approval.

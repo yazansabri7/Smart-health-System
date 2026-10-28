@@ -1,4 +1,5 @@
 import { api } from '../api/client.js';
+import { loginUser } from '../api/account.js';
 import { AuthError, ROLE_HOME, tokenFromResponse } from './jwt.js';
 import { authSession } from './session.js';
 
@@ -34,11 +35,11 @@ export async function signIn(credentials, client = api, store = authSession) {
   const version = store.beginLogin();
   try {
     // Exactly one real request; no refresh, retry, alternate role, or mock path.
-    const response = await client.post('/Account/Login', credentials, { publicAuth: true });
-    if (response.data?.success !== true) {
-      throw backendLoginError(response.data);
+    const response = await loginUser(credentials, client);
+    if (response?.success !== true) {
+      throw backendLoginError(response);
     }
-    const token = tokenFromResponse(response.data);
+    const token = tokenFromResponse(response);
     const session = store.establish(token, version);
     return ROLE_HOME[session.role];
   } catch (error) {

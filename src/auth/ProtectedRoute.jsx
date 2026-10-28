@@ -1,25 +1,44 @@
-import { Navigate, Outlet } from 'react-router-dom';
-import useAuth from './useAuth.js';
+import { useEffect } from 'react';
+import { Navigate } from 'react-router-dom';
+import { validateToken } from './jwt.js';
 import { authSession } from './session.js';
-import AccessDenied from '../pages/dashboard/AccessDenied.jsx';
+import useAuth from './useAuth.js';
 
-export default function ProtectedRoute({ role }) {
+export default function ProtectedRoute({ role, children }) {
   const { session, reason, forbidden } = useAuth();
-  // Recheck the clock on every navigation/render, even if a background-tab timer
-  // has been delayed. An expired token must never mount protected content.
-  // eslint-disable-next-line react-hooks/purity
-  if (!session || session.expiresAt <= Date.now()) {
-    let authReason = reason;
-    if (session) {
-      authReason = 'expired';
+  let token = null;
+  let tokenSession = null;
+  let authReason = reason;
+
+  try {
+    token = localStorage.getItem('authToken');
+    if (token) {
+      tokenSession = validateToken(token);
     }
+  } catch (error) {
+    authReason = error.code || 'invalid_token';
+  }
+
+  const isTokenValid = Boolean(tokenSession);
+  const sessionToken = session?.token;
+  useEffect(() => {
+    // Keep Axios and the navbar in sync if storage changed before navigation.
+    if (!isTokenValid || token !== sessionToken) {
+      authSession.restore();
+    }
+  }, [token, sessionToken, isTokenValid]);
+
+  if (!tokenSession) {
     return <Navigate to="/login" replace state={{ authReason }} />;
   }
-  if (session.role !== role) {
-    return <AccessDenied />;
+  if (tokenSession.role !== role) {
+    return <Navigate to="/unauthorized" replace />;
   }
   if (forbidden) {
-    return <AccessDenied onDismiss={authSession.dismissForbidden} />;
+    return <Navigate to="/unauthorized" replace />;
   }
-  return <Outlet />;
+  if (sessionToken !== token) {
+    return null;
+  }
+  return children;
 }
