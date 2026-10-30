@@ -61,6 +61,8 @@ let synthetic = { status: 200, body: {} };
 let loginRequests = 0;
 let submittedHistory;
 const accountRequests = [];
+const readingRequests = [];
+let readingStatus = 200;
 const failures = [];
 const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
 const token = claims => `${encode({alg:'HS256',typ:'JWT'})}.${encode({exp:Math.floor(Date.now()/1000)+600,...claims})}.c2ln`;
@@ -159,6 +161,12 @@ try {
         await send('Fetch.fulfillRequest',{requestId,responseCode:status,responseHeaders:headers,body:Buffer.from('{}').toString('base64')});
         return;
       }
+      if (url.pathname.endsWith('/Readings')) {
+        readingRequests.push({ method: request.method, data: JSON.parse(request.postData), authenticated: !!request.headers.Authorization });
+        await delay(250);
+        await send('Fetch.fulfillRequest', { requestId, responseCode: readingStatus, responseHeaders: headers, body: Buffer.from('{}').toString('base64') });
+        return;
+      }
       if (['/Account/RegisterPatient', '/Account/RegisterDoctor', '/Account/SendCode', '/Account/ResetPassword'].some(path => url.pathname.endsWith(path))) {
         accountRequests.push({ path: url.pathname, method: request.method, data: JSON.parse(request.postData) });
         await send('Fetch.fulfillRequest', { requestId, responseCode: 200, responseHeaders: headers, body: Buffer.from(JSON.stringify({ success: true, message: 'Synthetic success' })).toString('base64') });
@@ -247,6 +255,35 @@ try {
   }
   await spa('/patient/readings');
   await check(`document.querySelector('main h2')?.textContent==='Health Readings'`, 'patient nested Outlet remains functional');
+  await evaluate(`document.querySelector('button[type="submit"]').click()`);
+  await check(`document.body.textContent.includes('Systolic is required') && document.body.textContent.includes('Diastolic is required')`, 'empty pressure values are rejected');
+  assert.equal(readingRequests.length, 0);
+  for (const [type, values] of [
+    ['pressure', { systolic: '120', diastolic: '80' }],
+    ['glucose', { glucoseLevel: '100.5' }],
+    ['both', { systolic: '120', diastolic: '80', glucoseLevel: '100' }],
+  ]) {
+    await selectOption('readingType', type);
+    await check(`!!document.querySelector('input[name="systolic"]') === ${type !== 'glucose'} && !!document.querySelector('input[name="glucoseLevel"]') === ${type !== 'pressure'}`, `${type}: only relevant fields appear`);
+    for (const [name, value] of Object.entries(values)) await fillField(name, value);
+    const before = readingRequests.length;
+    await evaluate(`document.querySelector('button[type="submit"]').click()`);
+    await check(`document.querySelector('button[type="submit"]').disabled`, `${type}: submission disabled while saving`);
+    await check(`document.body.textContent.includes('Your reading has been saved successfully.')`, `${type}: success feedback`);
+    assert.equal(readingRequests.length, before + 1);
+    assert.deepEqual(readingRequests.at(-1).data, Object.fromEntries(Object.entries(values).map(([name, value]) => [name, Number(value)])));
+    assert.equal(readingRequests.at(-1).method, 'POST');
+    assert.equal(readingRequests.at(-1).authenticated, true);
+    await check(`document.querySelector('input[name="readingType"]').value === 'pressure' && document.querySelector('input[name="systolic"]').value === '' && document.querySelector('input[name="diastolic"]').value === ''`, `${type}: form resets after saving`);
+  }
+  readingStatus = 500;
+  await fillField('systolic', '121');
+  await fillField('diastolic', '81');
+  await evaluate(`document.querySelector('button[type="submit"]').click()`);
+  await check(`document.body.textContent.includes('Unable to save your reading.') && !document.querySelector('button[type="submit"]').disabled && document.querySelector('input[name="systolic"]').value === '121'`, 'failed reading retains values and allows retry');
+  readingStatus = 200;
+  await evaluate(`document.querySelector('button[type="submit"]').click()`);
+  await check(`document.body.textContent.includes('Your reading has been saved successfully.')`, 'failed reading can be retried');
   await spa('/doctor');
   await check(`location.pathname==='/unauthorized' && document.querySelector('h1')?.textContent.includes('Access Denied')`, 'manual cross-role navigation rejected');
   await evaluate('history.back()');
