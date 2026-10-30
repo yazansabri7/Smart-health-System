@@ -12,6 +12,7 @@ import DashboardPlaceholder from './pages/dashboard/DashboardPlaceholder';
 import AccessDenied from './pages/dashboard/AccessDenied';
 import NotFound from './pages/NotFound';
 import ProtectedRoute from './auth/ProtectedRoute';
+import HealthReadings from './pages/readings/HealthReadings';
 
 const router = createBrowserRouter([
   {
@@ -37,7 +38,7 @@ const router = createBrowserRouter([
         ),
         children: [
           { index: true, element: <DashboardPlaceholder title="Dashboard" icon="dashboard" role="Patient" /> },
-          { path: 'readings', element: <DashboardPlaceholder title="Health Readings" icon="monitor_heart" role="Patient" /> },
+          { path: 'readings', element: <HealthReadings /> },
           { path: 'medications', element: <DashboardPlaceholder title="Medications" icon="medication" role="Patient" /> },
           { path: 'doctors', element: <DashboardPlaceholder title="My Doctors" icon="medical_services" role="Patient" /> },
           { path: 'messages', element: <DashboardPlaceholder title="Messages" icon="chat" role="Patient" /> },
