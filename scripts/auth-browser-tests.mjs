@@ -62,7 +62,16 @@ let loginRequests = 0;
 let submittedHistory;
 const accountRequests = [];
 const readingRequests = [];
+const updateRequests = [];
+let updateStatus = 200;
 let readingStatus = 200;
+let historyStatus = 200;
+let historyRequests = 0;
+let historyReadings = [
+  { id: 91001, patientId: 92001, timestamp: '2026-10-30T22:23:09.9182648', bloodPressure: { systolic: 120, diastolic: 80 }, glucoseReading: null },
+  { id: 91002, patientId: 92001, timestamp: '2026-10-30T21:00:00', bloodPressure: null, glucoseReading: { glucoseLevel: 0 } },
+  { id: 91003, patientId: 92001, timestamp: '2026-10-30T20:00:00', bloodPressure: { systolic: 128, diastolic: 84 }, glucoseReading: { glucoseLevel: 105.5 } },
+];
 const failures = [];
 const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
 const token = claims => `${encode({alg:'HS256',typ:'JWT'})}.${encode({exp:Math.floor(Date.now()/1000)+600,...claims})}.c2ln`;
@@ -161,9 +170,44 @@ try {
         await send('Fetch.fulfillRequest',{requestId,responseCode:status,responseHeaders:headers,body:Buffer.from('{}').toString('base64')});
         return;
       }
-      if (url.pathname.endsWith('/Readings')) {
-        readingRequests.push({ method: request.method, data: JSON.parse(request.postData), authenticated: !!request.headers.Authorization });
+      if (url.pathname.endsWith('/Readings/my')) {
+        historyRequests++;
+        assert.equal(request.method, 'GET');
+        assert.equal(url.pathname, '/api/Readings/my');
+        assert.equal(url.search, '');
+        assert.ok(request.headers.Authorization);
+        const body = JSON.stringify({ success: historyStatus === 200, data: historyReadings, errors: [], message: 'Synthetic backend metadata' });
+        await delay(300);
+        await send('Fetch.fulfillRequest', { requestId, responseCode: historyStatus, responseHeaders: headers, body: Buffer.from(body).toString('base64') });
+        return;
+      }
+      if (/\/Readings\/my\/\d+$/.test(url.pathname)) {
+        const id = Number(url.pathname.split('/').at(-1));
+        const data = JSON.parse(request.postData);
+        updateRequests.push({ method: request.method, path: url.pathname, data, authenticated: !!request.headers.Authorization });
         await delay(250);
+        if (updateStatus === 200) {
+          historyReadings = historyReadings.map(reading => reading.id !== id ? reading : {
+            ...reading,
+            bloodPressure: data.systolic == null ? reading.bloodPressure : { systolic: data.systolic, diastolic: data.diastolic },
+            glucoseReading: data.glucoseLevel == null ? reading.glucoseReading : { glucoseLevel: data.glucoseLevel },
+          });
+        }
+        await send('Fetch.fulfillRequest', { requestId, responseCode: updateStatus, responseHeaders: headers,
+          body: Buffer.from(JSON.stringify({ success: updateStatus === 200 })).toString('base64') });
+        return;
+      }
+      if (url.pathname.endsWith('/Readings')) {
+        const data = JSON.parse(request.postData);
+        readingRequests.push({ method: request.method, data, authenticated: !!request.headers.Authorization });
+        await delay(250);
+        if (readingStatus === 200) {
+          historyReadings = [...historyReadings, {
+            id: 91004 + readingRequests.length, patientId: 92001, timestamp: '2026-10-31T09:00:00',
+            bloodPressure: data.systolic == null ? null : { systolic: data.systolic, diastolic: data.diastolic },
+            glucoseReading: data.glucoseLevel == null ? null : { glucoseLevel: data.glucoseLevel },
+          }];
+        }
         await send('Fetch.fulfillRequest', { requestId, responseCode: readingStatus, responseHeaders: headers, body: Buffer.from('{}').toString('base64') });
         return;
       }
@@ -174,7 +218,12 @@ try {
       }
       // Block all other external requests, including fonts: no live backend access.
       await send('Fetch.fulfillRequest',{requestId,responseCode:200,responseHeaders:headers,body:''});
-    } catch { failures.push('Request interception failed'); }
+    } catch (error) {
+      // React Query aborts reads when their page unmounts. Chrome may discard
+      // the paused request before the delayed synthetic response is fulfilled.
+      if (new URL(request.url).pathname.endsWith('/Readings/my') && /Invalid InterceptionId/.test(error.message)) return;
+      failures.push('Request interception failed');
+    }
   });
   await send('Page.enable');
   await send('Runtime.enable');
@@ -255,9 +304,71 @@ try {
   }
   await spa('/patient/readings');
   await check(`document.querySelector('main h2')?.textContent==='Health Readings'`, 'patient nested Outlet remains functional');
+  const historySection = `document.querySelector('[aria-labelledby="reading-history-title"]')`;
+  await check(`${historySection}?.textContent.includes('105.5 mg/dL')`, 'confirmed nested glucose measurement renders');
+  await check(`${historySection}.textContent.includes('0 mg/dL') && ${historySection}.textContent.includes('128 / 84 mmHg')`, 'history preserves numeric zero and combined measurements');
+  await check(`${historySection}.querySelectorAll('ul > li:not([role="presentation"])').length === 3`, 'one history entry per reading');
+  const rows = await evaluate(`[...${historySection}.querySelectorAll('ul > li:not([role="presentation"])')].map(row => row.textContent)`);
+  assert.ok(rows[0].includes('Blood Pressure') && !rows[0].includes('mg/dL'));
+  assert.ok(rows[1].includes('Blood Glucose') && !rows[1].includes('mmHg'));
+  assert.ok(rows[2].includes('Blood Pressure and Blood Glucose'));
+  assert.ok(rows.every(row => !/9100|92001|9182648|Synthetic backend/.test(row)));
+  assert.ok(rows[0].includes(await evaluate(`new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date('2026-10-30T22:23:09.9182648'))`)));
+  passed++;
+  console.log('PASS history shows only readable dates, types, and present measurements');
+  const editDialog = `document.querySelector('[role="dialog"][aria-labelledby="edit-reading-title"]')`;
+  for (const [rowIndex, id, original, updated] of [
+    [0, 91001, { systolic: 120, diastolic: 80 }, { systolic: 122, diastolic: 82 }],
+    [1, 91002, { glucoseLevel: 0 }, { glucoseLevel: 102 }],
+    [2, 91003, { systolic: 128, diastolic: 84, glucoseLevel: 105.5 }, { systolic: 129, diastolic: 85, glucoseLevel: 106.5 }],
+  ]) {
+    await evaluate(`${historySection}.querySelectorAll('ul > li:not([role="presentation"])')[${rowIndex}].querySelector('button').click()`);
+    await check(`!!${editDialog}`, 'Edit opens a dialog');
+    await delay(250);
+    const populated = await evaluate(`Object.fromEntries([...${editDialog}.querySelectorAll('input[type="number"]')].map(input => [input.name, Number(input.value)]))`);
+    assert.deepEqual(populated, original, 'edit fields prepopulate the selected measurements, including zero');
+    for (const [name, value] of Object.entries(updated)) {
+      const selector = `[role="dialog"] input[name="${name}"]`;
+      await evaluate(`(() => {
+        const input = document.querySelector(${JSON.stringify(selector)});
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        input.focus();
+      })()`);
+      if (rowIndex === 0 && name === 'systolic') {
+        await evaluate(`${editDialog}.querySelector('button[type="submit"]').click()`);
+        await check(`${editDialog}.textContent.includes('Systolic is required')`, 'edit validates required measurements');
+        assert.equal(updateRequests.length, 0);
+      }
+      await send('Input.insertText', { text: String(value) });
+    }
+    const before = updateRequests.length;
+    const beforeHistory = historyRequests;
+    if (rowIndex === 0) updateStatus = 500;
+    await evaluate(`${editDialog}.querySelector('button[type="submit"]').click()`);
+    await check(`${editDialog}.querySelector('button[type="submit"]').disabled`, 'edit submission disabled while saving');
+    if (rowIndex === 0) {
+      await check(`${editDialog}.textContent.includes('Unable to update your reading.') && ${editDialog}.querySelector('input[name="systolic"]').value === '122' && !${editDialog}.querySelector('button[type="submit"]').disabled`, 'failed PATCH retains dialog and entered values');
+      assert.equal(historyRequests, beforeHistory, 'failed PATCH does not invalidate history');
+      updateStatus = 200;
+      await evaluate(`${editDialog}.querySelector('button[type="submit"]').click()`);
+    }
+    await check(`!${editDialog} && document.body.textContent.includes('Your reading has been updated successfully.')`, 'successful PATCH closes dialog and shows confirmation');
+    assert.equal(updateRequests.length, before + (rowIndex === 0 ? 2 : 1), 'no duplicate PATCH requests');
+    assert.deepEqual(updateRequests.at(-1), { method: 'PATCH', path: `/api/Readings/my/${id}`, data: updated, authenticated: true });
+    assert.equal(historyRequests, beforeHistory + 1, 'PATCH refreshes the existing history query once');
+    const rowText = await evaluate(`${historySection}.querySelectorAll('ul > li:not([role="presentation"])')[${rowIndex}].textContent`);
+    if (updated.systolic != null) assert.ok(rowText.includes(`${updated.systolic} / ${updated.diastolic} mmHg`));
+    if (updated.glucoseLevel != null) assert.ok(rowText.includes(`${updated.glucoseLevel} mg/dL`));
+    passed++;
+    console.log('PASS selected reading ID, exact PATCH payload, and refreshed values');
+  }
+  const requestsBeforeRerender = historyRequests;
   await evaluate(`document.querySelector('button[type="submit"]').click()`);
   await check(`document.body.textContent.includes('Systolic is required') && document.body.textContent.includes('Diastolic is required')`, 'empty pressure values are rejected');
   assert.equal(readingRequests.length, 0);
+  assert.equal(historyRequests, requestsBeforeRerender, 'form validation does not refetch history');
   for (const [type, values] of [
     ['pressure', { systolic: '120', diastolic: '80' }],
     ['glucose', { glucoseLevel: '100.5' }],
@@ -267,6 +378,8 @@ try {
     await check(`!!document.querySelector('input[name="systolic"]') === ${type !== 'glucose'} && !!document.querySelector('input[name="glucoseLevel"]') === ${type !== 'pressure'}`, `${type}: only relevant fields appear`);
     for (const [name, value] of Object.entries(values)) await fillField(name, value);
     const before = readingRequests.length;
+    const beforeHistory = historyRequests;
+    const beforeRows = historyReadings.length;
     await evaluate(`document.querySelector('button[type="submit"]').click()`);
     await check(`document.querySelector('button[type="submit"]').disabled`, `${type}: submission disabled while saving`);
     await check(`document.body.textContent.includes('Your reading has been saved successfully.')`, `${type}: success feedback`);
@@ -274,6 +387,8 @@ try {
     assert.deepEqual(readingRequests.at(-1).data, Object.fromEntries(Object.entries(values).map(([name, value]) => [name, Number(value)])));
     assert.equal(readingRequests.at(-1).method, 'POST');
     assert.equal(readingRequests.at(-1).authenticated, true);
+    assert.equal(historyRequests, beforeHistory + 1, 'successful POST refreshes history once');
+    await check(`${historySection}.querySelectorAll('ul > li:not([role="presentation"])').length === ${beforeRows + 1}`, `${type}: new reading appears without a page reload`);
     await check(`document.querySelector('input[name="readingType"]').value === 'pressure' && document.querySelector('input[name="systolic"]').value === '' && document.querySelector('input[name="diastolic"]').value === ''`, `${type}: form resets after saving`);
   }
   readingStatus = 500;
@@ -284,6 +399,25 @@ try {
   readingStatus = 200;
   await evaluate(`document.querySelector('button[type="submit"]').click()`);
   await check(`document.body.textContent.includes('Your reading has been saved successfully.')`, 'failed reading can be retried');
+  await evaluate(`document.querySelector('[aria-label="Log out"]').click()`);
+  await check(`location.pathname === '/login'`, 'logout before readings account switch');
+  historyReadings = [];
+  await login('Patient', { sub: 'synthetic-second-account' });
+  await spa('/patient/readings');
+  await check(`${historySection}?.textContent.includes('Loading your readings...') && !${historySection}.textContent.includes('105.5 mg/dL')`, 'new account loads without displaying the previous account cache');
+  await check(`${historySection}.textContent.includes('No readings yet.')`, 'new account empty history displays correctly');
+  historyStatus = 500;
+  await evaluate(`import('/src/api/queryClient.js').then(({ queryClient }) => queryClient.invalidateQueries({ queryKey: ['myReadings'] }))`);
+  await check(`${historySection}.textContent.includes('Unable to load your readings.')`, 'GET error displays safe feedback');
+  historyStatus = 200;
+  historyReadings = [{ id: 93001, patientId: 94001, timestamp: '2026-10-31T10:00:00', bloodPressure: null, glucoseReading: { glucoseLevel: 99 } }];
+  await evaluate(`[...${historySection}.querySelectorAll('button')].find(button => button.textContent.includes('Try again')).click()`);
+  await check(`${historySection}.textContent.includes('99 mg/dL') && !${historySection}.textContent.includes('105.5 mg/dL')`, 'retry loads only the current account readings');
+  for (const width of [320, 768, 1440]) {
+    await send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
+    await delay(300);
+    await check(`${historySection}.getBoundingClientRect().right <= window.innerWidth && ${historySection}.scrollWidth <= ${historySection}.clientWidth && ${historySection}.textContent.includes('99 mg/dL')`, `${width}px: history fits the dashboard`);
+  }
   await spa('/doctor');
   await check(`location.pathname==='/unauthorized' && document.querySelector('h1')?.textContent.includes('Access Denied')`, 'manual cross-role navigation rejected');
   await evaluate('history.back()');
