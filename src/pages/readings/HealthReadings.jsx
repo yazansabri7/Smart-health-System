@@ -3,7 +3,10 @@ import { Controller, useForm, useWatch } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import MaterialIcon from '../../components/layout/MaterialIcon';
 import useAddReading from '../../hooks/useAddReading.js';
+import useMyReadings from '../../hooks/useMyReadings.js';
+import ReadingHistory from './ReadingHistory.jsx';
 import { readingSchema } from '../../validations/readingSchema.js';
+import useAuth from '../../auth/useAuth.js';
 
 const defaultValues = { readingType: 'pressure', systolic: '', diastolic: '', glucoseLevel: '' };
 const fieldSx = {
@@ -11,6 +14,8 @@ const fieldSx = {
 };
 
 export default function HealthReadings() {
+  const { version } = useAuth();
+  const readings = useMyReadings();
   const request = useAddReading();
   const { register, control, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm({
     resolver: yupResolver(readingSchema),
@@ -93,6 +98,7 @@ export default function HealthReadings() {
           </Button>
         </Stack>
       </Paper>
+      <ReadingHistory key={version} query={readings} />
     </Box>
   );
 }
