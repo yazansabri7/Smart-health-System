@@ -13,6 +13,7 @@ import AccessDenied from './pages/dashboard/AccessDenied';
 import NotFound from './pages/NotFound';
 import ProtectedRoute from './auth/ProtectedRoute';
 import HealthReadings from './pages/readings/HealthReadings';
+import ChatPage from './pages/chat/ChatPage.jsx';
 
 const router = createBrowserRouter([
   {
@@ -41,7 +42,7 @@ const router = createBrowserRouter([
           { path: 'readings', element: <HealthReadings /> },
           { path: 'medications', element: <DashboardPlaceholder title="Medications" icon="medication" role="Patient" /> },
           { path: 'doctors', element: <DashboardPlaceholder title="My Doctors" icon="medical_services" role="Patient" /> },
-          { path: 'messages', element: <DashboardPlaceholder title="Messages" icon="chat" role="Patient" /> },
+          { path: 'messages', element: <ChatPage role="Patient" /> },
           { path: 'alerts', element: <DashboardPlaceholder title="Alerts" icon="notifications" role="Patient" /> },
           { path: 'predictions', element: <DashboardPlaceholder title="AI Predictions" icon="psychology" role="Patient" /> },
           { path: 'profile', element: <DashboardPlaceholder title="Profile" icon="person" role="Patient" /> },
@@ -68,6 +69,7 @@ const router = createBrowserRouter([
         ),
         children: [
           { index: true, element: <DashboardPlaceholder title="Dashboard" icon="dashboard" role="Doctor" /> },
+          { path: 'messages', element: <ChatPage role="Doctor" /> },
         ],
       },
       {

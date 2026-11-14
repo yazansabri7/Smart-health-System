@@ -50,16 +50,16 @@ export default function EditReadingDialog({ reading, onClose, onUpdated }) {
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 3 }}>
                 <TextField {...register('systolic')} label="Systolic" type="number" required fullWidth
                   disabled={pending} error={!!errors.systolic} helperText={errors.systolic?.message}
-                  slotProps={{ htmlInput: { step: 'any' } }} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }} />
+                  slotProps={{ htmlInput: { step: 1 } }} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }} />
                 <TextField {...register('diastolic')} label="Diastolic" type="number" required fullWidth
                   disabled={pending} error={!!errors.diastolic} helperText={errors.diastolic?.message}
-                  slotProps={{ htmlInput: { step: 'any' } }} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }} />
+                  slotProps={{ htmlInput: { step: 1 } }} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }} />
               </Box>
             )}
             {hasGlucose && (
               <TextField {...register('glucoseLevel')} label="Blood glucose (mg/dL)" type="number" required fullWidth
                 disabled={pending} error={!!errors.glucoseLevel} helperText={errors.glucoseLevel?.message}
-                slotProps={{ htmlInput: { step: 'any' } }} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }} />
+                slotProps={{ htmlInput: { step: 1 } }} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }} />
             )}
           </Stack>
         </DialogContent>

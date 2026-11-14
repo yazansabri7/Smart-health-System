@@ -8,5 +8,8 @@ export const patientNavigation = [
   { label: 'AI Predictions', icon: 'psychology', path: '/patient/predictions' },
   { label: 'Profile', icon: 'person', path: '/patient/profile' },
 ];
-export const doctorNavigation = [{ label: 'Dashboard', icon: 'dashboard', path: '/doctor' }];
+export const doctorNavigation = [
+  { label: 'Dashboard', icon: 'dashboard', path: '/doctor' },
+  { label: 'Messages', icon: 'chat', path: '/doctor/messages' },
+];
 export const adminNavigation = [{ label: 'Dashboard', icon: 'dashboard', path: '/admin' }];

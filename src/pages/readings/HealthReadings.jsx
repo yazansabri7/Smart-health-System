@@ -79,16 +79,16 @@ export default function HealthReadings() {
               <>
                 <TextField {...register('systolic')} label="Systolic" type="number" required fullWidth
                   disabled={pending} error={!!errors.systolic} helperText={errors.systolic?.message}
-                  slotProps={{ htmlInput: { step: 'any' } }} sx={fieldSx} />
+                  slotProps={{ htmlInput: { step: 1 } }} sx={fieldSx} />
                 <TextField {...register('diastolic')} label="Diastolic" type="number" required fullWidth
                   disabled={pending} error={!!errors.diastolic} helperText={errors.diastolic?.message}
-                  slotProps={{ htmlInput: { step: 'any' } }} sx={fieldSx} />
+                  slotProps={{ htmlInput: { step: 1 } }} sx={fieldSx} />
               </>
             )}
             {showGlucose && (
               <TextField {...register('glucoseLevel')} label="Blood glucose (mg/dL)" type="number" required fullWidth
                 disabled={pending} error={!!errors.glucoseLevel} helperText={errors.glucoseLevel?.message}
-                slotProps={{ htmlInput: { step: 'any' } }} sx={fieldSx} />
+                slotProps={{ htmlInput: { step: 1 } }} sx={fieldSx} />
             )}
           </Box>
           <Button type="submit" variant="contained" disabled={pending}

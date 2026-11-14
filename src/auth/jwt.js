@@ -202,6 +202,20 @@ export function validateToken(token, now = Date.now()) {
   }
 }
 
+// The backend confirmed this account GUID is the SignalR message.senderId.
+// This helper does not infer patient/doctor record IDs or change login checks.
+export function getChatUserId(token) {
+  try {
+    validateToken(token);
+    const claims = parseObject(decodeSegment(token.split('.')[1]));
+    const userId = claims['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'];
+    return typeof userId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)
+      ? userId.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
 export function tokenFromResponse(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     throw new AuthError('invalid_token');

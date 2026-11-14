@@ -64,6 +64,9 @@ const accountRequests = [];
 const readingRequests = [];
 const updateRequests = [];
 let updateStatus = 200;
+const deleteRequests = [];
+let deleteStatus = 204;
+let deleteMessage = 'Synthetic deletion denied';
 let readingStatus = 200;
 let historyStatus = 200;
 let historyRequests = 0;
@@ -73,6 +76,22 @@ let historyReadings = [
   { id: 91003, patientId: 92001, timestamp: '2026-10-30T20:00:00', bloodPressure: { systolic: 128, diastolic: 84 }, glucoseReading: { glucoseLevel: 105.5 } },
 ];
 const failures = [];
+let chatRestRequests = [];
+let chatHistoryDelay = 300;
+const chatHistory = {
+  701: [
+    { id: 101, chatId: 701, senderId: 'A1234567-1234-5678-ABCD-123456789ABC', content: 'Earlier own message', createdAt: '2026-11-13T10:00:00Z', isRead: false },
+    { id: 102, chatId: 701, senderId: 'b1234567-1234-5678-abcd-123456789abc', content: 'Earlier received message', createdAt: '2026-11-13T11:00:00Z', isRead: false },
+  ],
+  902: [],
+};
+const doctorHistory = {
+  301: [
+    { id: 201, chatId: 301, senderId: 'D1234567-1234-5678-ABCD-123456789ABC', content: 'Doctor historical reply', createdAt: '2026-11-14T18:15:12.1610241', isRead: true },
+    { id: 202, chatId: 301, senderId: 'a1234567-1234-5678-abcd-123456789abc', content: 'Patient historical message', createdAt: '2026-11-14T18:16:00Z', isRead: true },
+  ],
+  808: [],
+};
 const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
 const token = claims => `${encode({alg:'HS256',typ:'JWT'})}.${encode({exp:Math.floor(Date.now()/1000)+600,...claims})}.c2ln`;
 const roleClaim = 'http://schemas.microsoft.com/ws/2008/06/identity/claims/role';
@@ -151,14 +170,39 @@ try {
   page.on('Fetch.requestPaused', async ({ requestId, request }) => {
     try {
       const url = new URL(request.url);
+      if (url.origin === origin && url.pathname.endsWith('/@microsoft_signalr.js')) {
+        await send('Fetch.fulfillRequest', { requestId, responseCode: 200,
+          responseHeaders: [{ name: 'Content-Type', value: 'application/javascript' }],
+          body: readFileSync('tests/fixtures/signalr-browser.js').toString('base64') });
+        return;
+      }
       if (url.origin === origin || ['data:', 'blob:'].includes(url.protocol)) { await send('Fetch.continueRequest', {requestId}); return; }
       const headers = [
         {name:'Access-Control-Allow-Origin',value:'*'},
         {name:'Access-Control-Allow-Headers',value:'*'},
-        {name:'Access-Control-Allow-Methods',value:'GET,POST,PATCH,OPTIONS'},
+        {name:'Access-Control-Allow-Methods',value:'GET,POST,PATCH,DELETE,OPTIONS'},
         {name:'Content-Type',value:'application/json'},
       ];
       if (request.method === 'OPTIONS') { await send('Fetch.fulfillRequest',{requestId,responseCode:204,responseHeaders:headers}); return; }
+      if (/^\/api\/(Patient|Doctor)\/Chat(?:\/\d+\/Messages)?$/.test(url.pathname)) {
+        assert.equal(request.method, 'GET', 'chat REST APIs are read-only');
+        assert.ok(request.headers.Authorization);
+        chatRestRequests.push(url.pathname);
+        const isDoctor = url.pathname.startsWith('/api/Doctor/');
+        const conversations = isDoctor
+          ? [{ id: 301, doctorId: 37, patientId: 42, createdAt: '2026-11-14T10:00:00' }, { id: 808, doctorId: 37, patientId: 91, createdAt: '2026-11-14T11:00:00' }]
+          : [{ id: 701, doctorId: 37, patientId: 27, createdAt: '2026-11-14T10:00:00' }, { id: 902, doctorId: 88, patientId: 27, createdAt: '2026-11-14T11:00:00' }];
+        let data = url.pathname.endsWith('/Chat') ? conversations
+          : (isDoctor ? doctorHistory : chatHistory)[Number(url.pathname.split('/').at(-2))];
+        if (url.pathname.endsWith('/Messages')) {
+          const serverMessages = await evaluate('window.__chatTest?.serverMessages || []');
+          data = [...data, ...serverMessages.filter(message => message.chatId === Number(url.pathname.split('/').at(-2)))];
+        }
+        const body = JSON.stringify({ success: true, data, errors: null, message: 'Synthetic chat response' });
+        if (url.pathname.endsWith('/Messages')) await delay(chatHistoryDelay);
+        await send('Fetch.fulfillRequest', { requestId, responseCode: 200, responseHeaders: headers, body: Buffer.from(body).toString('base64') });
+        return;
+      }
       if (url.pathname.endsWith('/Account/Login')) {
         loginRequests++;
         if(synthetic.network) { await send('Fetch.failRequest',{requestId,errorReason:'ConnectionFailed'}); return; }
@@ -179,6 +223,19 @@ try {
         const body = JSON.stringify({ success: historyStatus === 200, data: historyReadings, errors: [], message: 'Synthetic backend metadata' });
         await delay(300);
         await send('Fetch.fulfillRequest', { requestId, responseCode: historyStatus, responseHeaders: headers, body: Buffer.from(body).toString('base64') });
+        return;
+      }
+      if (request.method === 'DELETE' && /\/Readings\/my\/\d+$/.test(url.pathname)) {
+        const id = Number(url.pathname.split('/').at(-1));
+        deleteRequests.push({ method: request.method, path: url.pathname, hasBody: !!request.postData, authenticated: !!request.headers.Authorization });
+        await delay(250);
+        if (deleteStatus === 204) {
+          historyReadings = historyReadings.filter(reading => reading.id !== id);
+          await send('Fetch.fulfillRequest', { requestId, responseCode: 204, responseHeaders: headers });
+        } else {
+          await send('Fetch.fulfillRequest', { requestId, responseCode: deleteStatus, responseHeaders: headers,
+            body: Buffer.from(JSON.stringify(deleteMessage ? { message: deleteMessage } : {})).toString('base64') });
+        }
         return;
       }
       if (/\/Readings\/my\/\d+$/.test(url.pathname)) {
@@ -221,7 +278,7 @@ try {
     } catch (error) {
       // React Query aborts reads when their page unmounts. Chrome may discard
       // the paused request before the delayed synthetic response is fulfilled.
-      if (new URL(request.url).pathname.endsWith('/Readings/my') && /Invalid InterceptionId/.test(error.message)) return;
+      if ((new URL(request.url).pathname.endsWith('/Readings/my') || /\/(Patient|Doctor)\/Chat(?:\/\d+\/Messages)?$/.test(new URL(request.url).pathname)) && /Invalid InterceptionId/.test(error.message)) return;
       failures.push('Request interception failed');
     }
   });
@@ -320,13 +377,22 @@ try {
   for (const [rowIndex, id, original, updated] of [
     [0, 91001, { systolic: 120, diastolic: 80 }, { systolic: 122, diastolic: 82 }],
     [1, 91002, { glucoseLevel: 0 }, { glucoseLevel: 102 }],
-    [2, 91003, { systolic: 128, diastolic: 84, glucoseLevel: 105.5 }, { systolic: 129, diastolic: 85, glucoseLevel: 106.5 }],
+    [2, 91003, { systolic: 128, diastolic: 84, glucoseLevel: 105.5 }, { systolic: 129, diastolic: 85, glucoseLevel: 106 }],
   ]) {
     await evaluate(`${historySection}.querySelectorAll('ul > li:not([role="presentation"])')[${rowIndex}].querySelector('button').click()`);
     await check(`!!${editDialog}`, 'Edit opens a dialog');
     await delay(250);
     const populated = await evaluate(`Object.fromEntries([...${editDialog}.querySelectorAll('input[type="number"]')].map(input => [input.name, Number(input.value)]))`);
     assert.deepEqual(populated, original, 'edit fields prepopulate the selected measurements, including zero');
+    if (rowIndex > 0) {
+      const beforeInvalidEdit = updateRequests.length;
+      await evaluate(`${editDialog}.querySelector('button[type="submit"]').click()`);
+      const expectedError = rowIndex === 1
+        ? 'Blood glucose must be between 20 and 600 mg/dL.'
+        : 'Blood glucose must be a whole number';
+      await check(`${editDialog}.textContent.includes(${JSON.stringify(expectedError)}) && ${editDialog}.querySelector('input[name="glucoseLevel"]').value === '${original.glucoseLevel}'`, 'existing invalid reading is retained for correction');
+      assert.equal(updateRequests.length, beforeInvalidEdit, 'invalid edit does not send PATCH');
+    }
     for (const [name, value] of Object.entries(updated)) {
       const selector = `[role="dialog"] input[name="${name}"]`;
       await evaluate(`(() => {
@@ -369,9 +435,33 @@ try {
   await check(`document.body.textContent.includes('Systolic is required') && document.body.textContent.includes('Diastolic is required')`, 'empty pressure values are rejected');
   assert.equal(readingRequests.length, 0);
   assert.equal(historyRequests, requestsBeforeRerender, 'form validation does not refetch history');
+  for (const [values, message] of [
+    [{ systolic: '301', diastolic: '80' }, 'Systolic pressure must be between 50 and 300 mmHg.'],
+    [{ systolic: '120.5', diastolic: '80' }, 'Systolic must be a whole number'],
+    [{ systolic: '80', diastolic: '80' }, 'Systolic pressure must be greater than diastolic pressure.'],
+  ]) {
+    for (const [name, value] of Object.entries(values)) {
+      await evaluate(`(() => {
+        const input = document.querySelector('main form input[name="${name}"]');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)});
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+    }
+    await evaluate(`document.querySelector('main form button[type="submit"]').click()`);
+    await check(`document.querySelector('main form').textContent.includes(${JSON.stringify(message)})`, 'Add Reading displays the shared input validation');
+    assert.equal(readingRequests.length, 0, 'invalid Add Reading does not send POST');
+  }
+  await evaluate(`(() => {
+    for (const input of document.querySelectorAll('main form input[type="number"]')) {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  })()`);
   for (const [type, values] of [
     ['pressure', { systolic: '120', diastolic: '80' }],
-    ['glucose', { glucoseLevel: '100.5' }],
+    ['glucose', { glucoseLevel: '100' }],
     ['both', { systolic: '120', diastolic: '80', glucoseLevel: '100' }],
   ]) {
     await selectOption('readingType', type);
@@ -399,6 +489,47 @@ try {
   readingStatus = 200;
   await evaluate(`document.querySelector('button[type="submit"]').click()`);
   await check(`document.body.textContent.includes('Your reading has been saved successfully.')`, 'failed reading can be retried');
+  const deleteDialog = `document.querySelector('[role="dialog"][aria-labelledby="delete-reading-title"]')`;
+  for (const id of [91001, 91002, 91003]) {
+    const before = deleteRequests.length;
+    const beforeHistory = historyRequests;
+    const beforeRows = historyReadings.length;
+    const selectedRow = historyReadings.find(reading => reading.id === id);
+    await evaluate(`${historySection}.querySelectorAll('ul > li:not([role="presentation"])')[0].querySelector('button[aria-label^="Delete "]').click()`);
+    await check(`${deleteDialog}?.textContent.includes('Are you sure you want to delete this reading? This action cannot be undone.')`, 'Delete opens confirmation before sending a request');
+    assert.equal(deleteRequests.length, before);
+    await evaluate(`[...${deleteDialog}.querySelectorAll('button')].find(button => button.textContent === 'Cancel').click()`);
+    await check(`!${deleteDialog}`, 'Cancel closes delete confirmation');
+    assert.equal(deleteRequests.length, before, 'Cancel sends no DELETE');
+    await evaluate(`${historySection}.querySelectorAll('ul > li:not([role="presentation"])')[0].querySelector('button[aria-label^="Delete "]').click()`);
+    await check(`!!${deleteDialog}`, 'delete confirmation can be reopened');
+    if (id === 91001) {
+      deleteStatus = 409;
+      await evaluate(`[...${deleteDialog}.querySelectorAll('button')].find(button => button.textContent === 'Delete Reading').click()`);
+      await check(`${deleteDialog}.textContent.includes('Synthetic deletion denied')`, 'delete failure displays backend message');
+      assert.equal(historyRequests, beforeHistory);
+      assert.deepEqual(historyReadings.find(reading => reading.id === id), selectedRow, 'failed deletion keeps the reading');
+      deleteMessage = '';
+      await evaluate(`[...${deleteDialog}.querySelectorAll('button')].find(button => button.textContent === 'Delete Reading').click()`);
+      await check(`${deleteDialog}.textContent.includes('Unable to delete your reading. Please try again.')`, 'delete failure without a backend message uses the fallback');
+      assert.equal(historyRequests, beforeHistory);
+      deleteStatus = 204;
+    }
+    const beforeConfirm = deleteRequests.length;
+    await evaluate(`(() => {
+      const button = [...${deleteDialog}.querySelectorAll('button')].find(button => button.textContent === 'Delete Reading');
+      button.click(); button.click(); button.click();
+    })()`);
+    await check(`${deleteDialog}?.querySelectorAll('button:disabled').length === 2 && ${deleteDialog}.textContent.includes('Deleting...')`, 'pending deletion disables both buttons');
+    await check(`!${deleteDialog} && document.body.textContent.includes('Your reading has been deleted successfully.')`, 'empty successful DELETE closes the dialog and confirms success');
+    assert.equal(deleteRequests.length, beforeConfirm + 1, 'rapid clicks send only one DELETE');
+    assert.deepEqual(deleteRequests.at(-1), { method: 'DELETE', path: `/api/Readings/my/${id}`, hasBody: false, authenticated: true });
+    assert.equal(historyRequests, beforeHistory + 1, 'successful deletion refreshes the existing query once');
+    assert.equal(historyReadings.some(reading => reading.id === id), false);
+    await check(`${historySection}.querySelectorAll('ul > li:not([role="presentation"])').length === ${beforeRows - 1}`, 'deleted reading disappears from history');
+    passed++;
+    console.log('PASS DELETE targets its own reading ID and sends no body');
+  }
   await evaluate(`document.querySelector('[aria-label="Log out"]').click()`);
   await check(`location.pathname === '/login'`, 'logout before readings account switch');
   historyReadings = [];
@@ -590,6 +721,150 @@ try {
   assert.ok(accountRequests.at(-1).path.endsWith('/Account/ResetPassword'));
   assert.equal(accountRequests.at(-1).method, 'PATCH');
   assert.deepEqual(accountRequests.at(-1).data, { email: 'synthetic@example.invalid', code: '12345', newPassword: 'Synthetic1!' });
+  await login('Patient', { 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier': 'a1234567-1234-5678-abcd-123456789abc' });
+  chatRestRequests = [];
+  await spa('/patient/messages');
+  await send('Emulation.setFocusEmulationEnabled', { enabled: true });
+  await check(`!!window.__chatTest && document.querySelector('main').textContent.includes('Connected') && document.querySelector('main').textContent.includes('Doctor #37')`, 'chat connects and loads real conversation IDs');
+  assert.equal(await evaluate('window.__chatTest.hubUrl'), 'https://chatsystem.runasp.net/hubs/chat');
+  assert.equal(await evaluate('window.__chatTest.tokenPresent && window.__chatTest.automaticReconnect'), true);
+  assert.equal(await evaluate('window.__chatTest.starts'), 1, 'StrictMode starts one connection');
+  assert.deepEqual(chatRestRequests, ['/api/Patient/Chat'], 'history waits for a selected conversation');
+  chatHistoryDelay = 600;
+  await evaluate(`[...document.querySelectorAll('main [role="button"]')].find(button => button.textContent === 'Doctor #37').click()`);
+  await until(() => chatRestRequests.includes('/api/Patient/Chat/701/Messages'), 'dynamic message history endpoint');
+  await evaluate(`window.__chatTest.emit({ id: 103, chatId: 701, senderId: 'b1234567-1234-5678-abcd-123456789abc', content: 'Arrived during history', createdAt: '2026-11-14T11:00:00Z', isRead: false })`);
+  await evaluate(`window.__chatTest.receipt({ chatId: 701, readAt: '2026-11-14T18:00:00Z' })`);
+  await check(`document.querySelector('[role="log"]').textContent.includes('Earlier own message') && document.querySelector('[role="log"]').textContent.includes('Arrived during history')`, 'REST completion preserves in-flight real-time messages');
+  const ownAlignment = await evaluate(`getComputedStyle([...document.querySelectorAll('[role="log"] p')].find(element => element.textContent === 'Earlier own message').parentElement).alignSelf`);
+  assert.equal(ownAlignment, 'flex-end', 'confirmed GUID claim aligns historical own messages');
+  const receivedAlignment = await evaluate(`getComputedStyle([...document.querySelectorAll('[role="log"] p')].find(element => element.textContent === 'Earlier received message').parentElement).alignSelf`);
+  assert.equal(receivedAlignment, 'flex-start');
+  await check(`[...document.querySelectorAll('[role="log"] p')].find(element => element.textContent === 'Earlier own message').parentElement.querySelector('[aria-label="Read"]') != null`, 'receipt during history fetch updates sent history');
+  assert.equal(await evaluate(`[...document.querySelectorAll('[role="log"] p')].find(element => element.textContent === 'Earlier received message').parentElement.querySelector('[role="img"]') === null`), true, 'received messages have no read indicator');
+  await delay(400);
+  assert.ok(await evaluate(`window.__chatTest.readCalls.some(call => call.method === 'MarkMessagesAsRead' && call.chatId === 701)`), 'opening Patient chat marks its dynamic ID');
+  const marksBeforeOwnSend = await evaluate('window.__chatTest.readCalls.length');
+  await evaluate(`document.querySelector('main textarea').focus()`);
+  await send('Input.insertText', { text: '  Synthetic new message  ' });
+  await evaluate(`document.querySelector('main form button[type="submit"]').click()`);
+  await check(`document.querySelector('main form button[type="submit"]').disabled`, 'send disables duplicate submissions');
+  await check(`document.querySelector('main textarea').value === '' && document.querySelector('[role="log"]').textContent.includes('Synthetic new message')`, 'successful SignalR send displays and clears draft');
+  assert.deepEqual(await evaluate('window.__chatTest.calls'), [{ method: 'SendMessage', chatId: 701, content: 'Synthetic new message' }]);
+  assert.equal(await evaluate(`[...document.querySelectorAll('[role="log"] p')].filter(element => element.textContent === 'Synthetic new message').length`), 1, 'echoes and invocation return deduplicate');
+  await check(`[...document.querySelectorAll('[role="log"] p')].find(element => element.textContent === 'Synthetic new message').parentElement.querySelector('[aria-label="Saved, not marked as read"]') != null`, 'saved outgoing message starts with a single check');
+  await delay(250);
+  assert.equal(await evaluate('window.__chatTest.readCalls.length'), marksBeforeOwnSend, 'own send and echoes do not mark incoming messages read');
+  const fetchesBeforeReceipt = chatRestRequests.length;
+  await evaluate(`window.__chatTest.receipt({ chatId: 701, readAt: '2026-11-14T18:01:00Z' }); window.__chatTest.receipt({ chatId: 701, readAt: '2026-11-14T18:01:00Z' })`);
+  await check(`[...document.querySelectorAll('[role="log"] p')].find(element => element.textContent === 'Synthetic new message').parentElement.querySelector('[aria-label="Read"]') != null`, 'MessagesRead replaces the single check with a double check');
+  assert.equal(chatRestRequests.length, fetchesBeforeReceipt, 'receipt updates cache without a GET');
+  const beforeRaceFetch = chatRestRequests.filter(path => path === '/api/Patient/Chat/701/Messages').length;
+  await evaluate(`window.__chatTest.receiptBeforeAck = true; document.querySelector('main textarea').focus()`);
+  await send('Input.insertText', { text: 'Receipt before acknowledgement' });
+  await evaluate(`document.querySelector('main form button[type="submit"]').click()`);
+  await check(`document.querySelector('main textarea').value === '' && [...document.querySelectorAll('[role="log"] p')].find(element => element.textContent === 'Receipt before acknowledgement')?.parentElement.querySelector('[aria-label="Read"]') != null`, 'Patient receipt before send acknowledgement updates without a refresh');
+  assert.equal(chatRestRequests.filter(path => path === '/api/Patient/Chat/701/Messages').length, beforeRaceFetch + 1, 'only the raced conversation resynchronizes once');
+  await evaluate('window.__chatTest.receiptBeforeAck = false');
+  const marksBeforeBurst = await evaluate('window.__chatTest.readCalls.length');
+  await evaluate(`for (const id of [110, 111, 112]) window.__chatTest.emit({ id, chatId: 701, senderId: 'b1234567-1234-5678-abcd-123456789abc', content: 'Synthetic burst ' + id, createdAt: '2026-11-14T12:01:00Z', isRead: false })`);
+  await delay(450);
+  assert.equal(await evaluate('window.__chatTest.readCalls.length'), marksBeforeBurst + 1, 'incoming burst is marked once');
+  const marksBeforeHidden = await evaluate('window.__chatTest.readCalls.length');
+  await evaluate(`Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' }); document.dispatchEvent(new Event('visibilitychange')); window.__chatTest.emit({ id: 113, chatId: 701, senderId: 'b1234567-1234-5678-abcd-123456789abc', content: 'Synthetic hidden event', createdAt: '2026-11-14T12:02:00Z', isRead: false })`);
+  await delay(350);
+  assert.equal(await evaluate('window.__chatTest.readCalls.length'), marksBeforeHidden, 'hidden conversation does not mark messages read');
+  await evaluate(`delete document.visibilityState; document.dispatchEvent(new Event('visibilitychange'))`);
+  await delay(400);
+  assert.equal(await evaluate('window.__chatTest.readCalls.length'), marksBeforeHidden + 1, 'visible active chat resynchronizes read status');
+  await evaluate(`window.__chatTest.failSend = true; document.querySelector('main textarea').focus()`);
+  await send('Input.insertText', { text: 'Keep failed draft' });
+  await evaluate(`document.querySelector('main form button[type="submit"]').click()`);
+  await check(`document.querySelector('main').textContent.includes('Unable to send your message') && document.querySelector('main textarea').value === 'Keep failed draft'`, 'failed send preserves draft');
+  await evaluate(`window.__chatTest.failRead = true; window.__chatTest.emit({ id: 114, chatId: 701, senderId: 'b1234567-1234-5678-abcd-123456789abc', content: 'Synthetic read failure event', createdAt: '2026-11-14T12:03:00Z', isRead: false })`);
+  await check(`document.querySelector('main').textContent.includes('Read status could not be updated') && !document.querySelector('main form button[type="submit"]').disabled`, 'failed read status keeps conversation and sending available');
+  await evaluate('window.__chatTest.failRead = false');
+  await evaluate('window.__chatTest.failSend = false; window.__chatTest.disconnect()');
+  await check(`document.querySelector('main').textContent.includes('Reconnecting') && document.querySelector('main form button[type="submit"]').disabled`, 'reconnection disables sending');
+  const historyBeforeReconnect = chatRestRequests.filter(path => path.endsWith('/701/Messages')).length;
+  chatHistory[701].push({ id: 104, chatId: 701, senderId: 'b1234567-1234-5678-abcd-123456789abc', content: 'Recovered after reconnect', createdAt: '2026-11-14T12:10:00Z', isRead: false });
+  await evaluate('window.__chatTest.reconnect()');
+  await check(`document.querySelector('[role="log"]').textContent.includes('Recovered after reconnect')`, 'reconnect recovers missed history');
+  await check(`[...document.querySelectorAll('[role="log"] p')].find(element => element.textContent === 'Synthetic new message').parentElement.querySelector('[aria-label="Read"]') != null`, 'history refetch cannot downgrade read messages');
+  assert.equal(chatRestRequests.filter(path => path.endsWith('/701/Messages')).length, historyBeforeReconnect + 1);
+  await evaluate(`[...document.querySelectorAll('main [role="button"]')].find(button => button.textContent === 'Doctor #88').click()`);
+  await check(`document.querySelector('[role="log"]').textContent.includes('No messages yet.') && !document.querySelector('[role="log"]').textContent.includes('Earlier own message')`, 'switching conversations isolates messages and supports empty history');
+  await delay(400);
+  const marksBeforeInactive = await evaluate('window.__chatTest.readCalls.length');
+  await evaluate(`window.__chatTest.emit({ id: 105, chatId: 701, senderId: 'b1234567-1234-5678-abcd-123456789abc', content: 'Other conversation event', createdAt: '2026-11-14T12:20:00Z', isRead: false })`);
+  await check(`!document.querySelector('[role="log"]').textContent.includes('Other conversation event')`, 'events never spill into a different selected conversation');
+  await delay(350);
+  assert.equal(await evaluate('window.__chatTest.readCalls.length'), marksBeforeInactive, 'inactive conversation event does not invoke MarkMessagesAsRead');
+  for (const width of [320, 768, 1440]) {
+    await send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
+    await delay(150);
+    await check(`document.querySelector('main').scrollWidth <= document.querySelector('main').clientWidth`, `${width}px: chat content remains responsive`);
+  }
+  await evaluate(`import('/src/auth/session.js').then(({ authSession }) => authSession.logout())`);
+  await check(`location.pathname === '/login' && window.__chatTest.stops >= 1 && !document.querySelector('[role="log"]')`, 'logout stops SignalR and removes patient messages');
+  await login('Doctor', { 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier': 'd1234567-1234-5678-abcd-123456789abc' });
+  chatRestRequests = [];
+  await evaluate(`document.querySelector('nav a[href="/doctor/messages"]').click()`);
+  await check(`location.pathname === '/doctor/messages' && document.querySelector('h1').textContent === 'Messages' && document.querySelector('main').textContent.includes('Connected') && document.querySelector('main').textContent.includes('Patient #42')`, 'Doctor navigation loads shared chat with patient fallbacks');
+  assert.deepEqual(chatRestRequests, ['/api/Doctor/Chat'], 'Doctor fetches only its conversation endpoint before selection');
+  assert.equal(await evaluate('window.__chatTest.tokenPresent'), true, 'Doctor hub uses authenticated session token');
+  await evaluate(`window.__chatTest.senderId = 'd1234567-1234-5678-abcd-123456789abc'`);
+  for (const [chatId, patientId] of [[301, 42], [808, 91]]) {
+    await evaluate(`[...document.querySelectorAll('main [role="button"]')].find(button => button.textContent === 'Patient #${patientId}').click()`);
+    await until(() => chatRestRequests.includes(`/api/Doctor/Chat/${chatId}/Messages`), 'Doctor fetches the selected dynamic chat ID');
+    if (chatId === 301) {
+      await check(`document.querySelector('[role="log"]').textContent.includes('Doctor historical reply') && !document.querySelector('[role="log"]').textContent.includes('Earlier own message')`, 'Doctor history remains isolated from Patient cache');
+      assert.equal(await evaluate(`getComputedStyle([...document.querySelectorAll('[role="log"] p')].find(element => element.textContent === 'Doctor historical reply').parentElement).alignSelf`), 'flex-end');
+      assert.equal(await evaluate(`getComputedStyle([...document.querySelectorAll('[role="log"] p')].find(element => element.textContent === 'Patient historical message').parentElement).alignSelf`), 'flex-start');
+      await check(`[...document.querySelectorAll('[role="log"] p')].find(element => element.textContent === 'Doctor historical reply').parentElement.querySelector('[aria-label="Read"]') != null`, 'Doctor historical isRead state renders a double check');
+    } else {
+      await check(`document.querySelector('[role="log"]').textContent.includes('No messages yet.') && !document.querySelector('[role="log"]').textContent.includes('Doctor historical reply')`, 'Doctor switches to a separate empty conversation');
+    }
+    const callsBefore = await evaluate('window.__chatTest.calls.length');
+    await evaluate(`document.querySelector('main textarea').focus()`);
+    await send('Input.insertText', { text: `  Doctor dynamic reply ${chatId}  ` });
+    await evaluate(`document.querySelector('main form button[type="submit"]').click()`);
+    await check(`document.querySelector('main textarea').value === '' && document.querySelector('[role="log"]').textContent.includes('Doctor dynamic reply ${chatId}')`, 'Doctor SendMessage result appears in selected conversation');
+    assert.equal(await evaluate('window.__chatTest.calls.length'), callsBefore + 1);
+    assert.deepEqual(await evaluate('window.__chatTest.calls.at(-1)'), { method: 'SendMessage', chatId, content: `Doctor dynamic reply ${chatId}` });
+    assert.equal(await evaluate(`[...document.querySelectorAll('[role="log"] p')].filter(element => element.textContent === 'Doctor dynamic reply ${chatId}').length`), 1, 'Doctor echo and invocation result deduplicate');
+    assert.equal(await evaluate(`getComputedStyle([...document.querySelectorAll('[role="log"] p')].find(element => element.textContent === 'Doctor dynamic reply ${chatId}').parentElement).alignSelf`), 'flex-end');
+    await delay(400);
+    assert.ok(await evaluate(`window.__chatTest.readCalls.some(call => call.chatId === ${chatId})`), 'Doctor opening marks the selected dynamic ID');
+    await check(`[...document.querySelectorAll('[role="log"] p')].find(element => element.textContent === 'Doctor dynamic reply ${chatId}').parentElement.querySelector('[aria-label="Saved, not marked as read"]') != null`, 'Doctor outgoing message is initially saved and unread');
+    if (chatId === 808) {
+      await evaluate(`window.__chatTest.receipt({ chatId: 301, readAt: '2026-11-14T19:00:00Z' })`);
+      assert.equal(await evaluate(`[...document.querySelectorAll('[role="log"] p')].find(element => element.textContent === 'Doctor dynamic reply 808').parentElement.querySelector('[aria-label="Saved, not marked as read"]') != null`), true, 'inactive receipt does not change selected conversation');
+    }
+    await evaluate(`window.__chatTest.receipt({ chatId: ${chatId}, readAt: '2026-11-14T19:01:00Z' })`);
+    await check(`[...document.querySelectorAll('[role="log"] p')].find(element => element.textContent === 'Doctor dynamic reply ${chatId}').parentElement.querySelector('[aria-label="Read"]') != null`, 'Doctor MessagesRead updates only its sent messages');
+    const doctorRaceFetches = chatRestRequests.filter(path => path === `/api/Doctor/Chat/${chatId}/Messages`).length;
+    await evaluate(`window.__chatTest.receiptBeforeAck = true; document.querySelector('main textarea').focus()`);
+    await send('Input.insertText', { text: `Doctor receipt race ${chatId}` });
+    await evaluate(`document.querySelector('main form button[type="submit"]').click()`);
+    await check(`document.querySelector('main textarea').value === '' && [...document.querySelectorAll('[role="log"] p')].find(element => element.textContent === 'Doctor receipt race ${chatId}')?.parentElement.querySelector('[aria-label="Read"]') != null`, 'Doctor receipt before send acknowledgement updates without a refresh');
+    assert.equal(chatRestRequests.filter(path => path === `/api/Doctor/Chat/${chatId}/Messages`).length, doctorRaceFetches + 1);
+    await evaluate('window.__chatTest.receiptBeforeAck = false');
+  }
+  await evaluate(`window.__chatTest.emit({ id: 203, chatId: 301, senderId: 'a1234567-1234-5678-abcd-123456789abc', content: 'Unselected patient event', createdAt: '2026-11-14T19:00:00Z', isRead: false })`);
+  await check(`!document.querySelector('[role="log"]').textContent.includes('Unselected patient event')`, 'Doctor events do not mix patient conversations');
+  await evaluate(`window.__chatTest.emit({ id: 204, chatId: 808, senderId: 'b1234567-1234-5678-abcd-123456789abc', content: 'Selected patient event', createdAt: '2026-11-14T19:01:00Z', isRead: false })`);
+  await check(`document.querySelector('[role="log"]').textContent.includes('Selected patient event')`, 'Doctor receives selected patient messages in real time');
+  const doctorFetches = chatRestRequests.filter(path => path === '/api/Doctor/Chat/808/Messages').length;
+  doctorHistory[808].push({ id: 205, chatId: 808, senderId: 'b1234567-1234-5678-abcd-123456789abc', content: 'Doctor reconnect recovery', createdAt: '2026-11-14T19:02:00Z', isRead: false });
+  await evaluate('window.__chatTest.disconnect()');
+  await check(`document.querySelector('main').textContent.includes('Reconnecting') && document.querySelector('main form button[type="submit"]').disabled`, 'Doctor reconnecting state disables sending');
+  await evaluate('window.__chatTest.reconnect()');
+  await check(`document.querySelector('[role="log"]').textContent.includes('Doctor reconnect recovery')`, 'Doctor reconnect refetches the selected Doctor history');
+  assert.equal(chatRestRequests.filter(path => path === '/api/Doctor/Chat/808/Messages').length, doctorFetches + 1);
+  assert.ok(chatRestRequests.every(path => path.startsWith('/api/Doctor/Chat')), 'Doctor never uses Patient REST endpoints');
+  await evaluate(`import('/src/auth/session.js').then(({ authSession }) => authSession.logout())`);
+  await check(`location.pathname === '/login' && !document.querySelector('[role="log"]') && window.__chatTest.stops >= 1`, 'Doctor logout cleans up the shared hub and messages');
   passed++;
   console.log('PASS send-code, resend, and password reset use the original request contracts');
   assert.deepEqual(failures,[],'no uncaught browser exceptions or interception errors');
