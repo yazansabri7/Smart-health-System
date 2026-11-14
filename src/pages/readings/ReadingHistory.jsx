@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Alert, Box, Button, CircularProgress, Divider, Paper, Snackbar, Stack, Typography } from '@mui/material';
 import EditReadingDialog from './EditReadingDialog.jsx';
+import DeleteReadingDialog from './DeleteReadingDialog.jsx';
+import MaterialIcon from '../../components/layout/MaterialIcon.jsx';
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -12,6 +14,13 @@ function formatDate(timestamp) {
 export default function ReadingHistory({ query }) {
   const [selectedReading, setSelectedReading] = useState(null);
   const [updateSuccess, setUpdateSuccess] = useState(false);
+  const [readingToDelete, setReadingToDelete] = useState(null);
+  const [deleteSuccess, setDeleteSuccess] = useState(false);
+
+  function handleDeleted() {
+    setReadingToDelete(null);
+    setDeleteSuccess(true);
+  }
 
   function handleUpdated() {
     setSelectedReading(null);
@@ -69,6 +78,13 @@ export default function ReadingHistory({ query }) {
                         sx={{ alignSelf: { xs: 'flex-start', sm: 'flex-end' }, borderRadius: 3 }}>
                         Edit
                       </Button>
+                      <Button size="small" color="error" disabled={!Number.isSafeInteger(reading.id) || reading.id <= 0}
+                        startIcon={<MaterialIcon name="delete_outline" sx={{ fontSize: 18 }} />}
+                        onClick={() => { setDeleteSuccess(false); setReadingToDelete(reading.id); }}
+                        aria-label={`Delete ${type.toLowerCase()} reading from ${formatDate(reading.timestamp)}`}
+                        sx={{ alignSelf: { xs: 'flex-start', sm: 'flex-end' }, borderRadius: 3 }}>
+                        Delete
+                      </Button>
                     </Stack>
                   </Box>
                 );
@@ -81,6 +97,13 @@ export default function ReadingHistory({ query }) {
         <EditReadingDialog key={selectedReading.id} reading={selectedReading}
           onClose={() => setSelectedReading(null)} onUpdated={handleUpdated} />
       )}
+      {readingToDelete !== null && (
+        <DeleteReadingDialog key={readingToDelete} readingId={readingToDelete}
+          onClose={() => setReadingToDelete(null)} onDeleted={handleDeleted} />
+      )}
+      <Snackbar open={deleteSuccess} autoHideDuration={6000} onClose={() => setDeleteSuccess(false)}>
+        <Alert severity="success" onClose={() => setDeleteSuccess(false)}>Your reading has been deleted successfully.</Alert>
+      </Snackbar>
       <Snackbar open={updateSuccess} autoHideDuration={6000} onClose={() => setUpdateSuccess(false)}>
         <Alert severity="success" onClose={() => setUpdateSuccess(false)}>Your reading has been updated successfully.</Alert>
       </Snackbar>

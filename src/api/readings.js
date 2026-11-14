@@ -1,5 +1,13 @@
 import { api } from './client.js';
 
+export async function deleteReading(readingId, client = api) {
+  if (!Number.isSafeInteger(readingId) || readingId <= 0) {
+    throw new Error('Unable to identify the selected reading.');
+  }
+  // A successful DELETE may have no response body (for example HTTP 204).
+  await client.delete(`/Readings/my/${readingId}`);
+}
+
 export async function getMyReadings({ signal } = {}, client = api) {
   const response = await client.get('/Readings/my', { signal });
   if (response.data?.success !== true || !Array.isArray(response.data.data)) {
