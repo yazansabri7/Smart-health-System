@@ -66,6 +66,12 @@ const updateRequests = [];
 let updateStatus = 200;
 const deleteRequests = [];
 let deleteStatus = 204;
+let medications = [{ id: 7301, name: 'Synthetic medication A', dosage: 'Prescription A', frequency: 'Instructions A' },
+  { id: 8402, name: 'Synthetic medication B', dosage: 'Prescription B', frequency: 'Instructions B' }];
+const medicationDeletes = [];
+let medicationDeleteStatus = 204;
+const medicationUpdates = [];
+let medicationUpdateStatus = 200;
 let deleteMessage = 'Synthetic deletion denied';
 let readingStatus = 200;
 let historyStatus = 200;
@@ -214,6 +220,33 @@ try {
         await send('Fetch.fulfillRequest',{requestId,responseCode:status,responseHeaders:headers,body:Buffer.from('{}').toString('base64')});
         return;
       }
+      if (/^\/api\/Medications\/my(?:\/\d+)?$/.test(url.pathname)) {
+        assert.ok(request.headers.Authorization?.startsWith('Bearer '));
+        let status = 200;
+        let body;
+        if (request.method === 'DELETE') {
+          medicationDeletes.push({ path: url.pathname, hasBody: !!request.postData });
+          await delay(250);
+          status = medicationDeleteStatus;
+          if (status === 204) medications = medications.filter(item => item.id !== Number(url.pathname.split('/').at(-1)));
+          else body = { message: 'Synthetic medication deletion denied' };
+        } else if (request.method === 'PATCH') {
+          const values = JSON.parse(request.postData);
+          medicationUpdates.push({ path: url.pathname, values });
+          await delay(250);
+          status = medicationUpdateStatus;
+          if (status === 200) medications = medications.map(item => item.id === Number(url.pathname.split('/').at(-1)) ? { ...item, ...values } : item);
+          body = { success: status === 200, message: status === 200 ? 'Synthetic update saved' : 'Synthetic medication update denied' };
+        } else if (request.method === 'POST') {
+          medications.push({ id: 9503, ...JSON.parse(request.postData) });
+          status = 204;
+        } else {
+          body = { success: true, data: medications };
+        }
+        await send('Fetch.fulfillRequest', { requestId, responseCode: status, responseHeaders: headers,
+          ...(body ? { body: Buffer.from(JSON.stringify(body)).toString('base64') } : {}) });
+        return;
+      }
       if (url.pathname.endsWith('/Readings/my')) {
         historyRequests++;
         assert.equal(request.method, 'GET');
@@ -359,6 +392,58 @@ try {
     await evaluate(`document.querySelector('nav a[href="${route}"]').click()`);
     await check(`document.querySelector('h1').textContent === ${JSON.stringify(title)} && document.querySelectorAll('nav a.active').length === 1 && document.querySelector('nav a.active').getAttribute('href') === '${route}'`, `${route}: title and active navigation`);
   }
+  await spa('/patient/medications');
+  await check(`document.querySelectorAll('main button[aria-label^="Delete Synthetic medication"]').length === 2`, 'each medication has a delete button');
+  const medicationEditDialog = `document.querySelector('[role="dialog"][aria-labelledby="edit-medication-title"]')`;
+  for (const [name, id, dosage, frequency] of [['A', 7301, 'Prescription A', 'Instructions A'], ['B', 8402, 'Prescription B', 'Instructions B']]) {
+    await evaluate(`document.querySelector('button[aria-label="Edit Synthetic medication ${name}"]').click()`);
+    await check(`${medicationEditDialog}?.querySelector('input[name="name"]').value === 'Synthetic medication ${name}' && ${medicationEditDialog}.querySelector('input[name="dosage"]').value === '${dosage}' && ${medicationEditDialog}.querySelector('input[name="frequency"]').value === '${frequency}'`, 'medication edit prepopulates selected record');
+    await evaluate(`${medicationEditDialog}.querySelector('input[name="name"]').focus()`);
+    await evaluate(`${medicationEditDialog}.querySelector('input[name="name"]').select()`);
+    await send('Input.insertText', { text: '   ' });
+    await evaluate(`${medicationEditDialog}.querySelector('button[type="submit"]').click()`);
+    await check(`${medicationEditDialog}.textContent.includes('Medication name is required.')`, 'medication edit uses shared required validation');
+    const beforeUpdate = medicationUpdates.length;
+    await evaluate(`${medicationEditDialog}.querySelector('input[name="name"]').focus()`);
+    await evaluate(`${medicationEditDialog}.querySelector('input[name="name"]').select()`);
+    await send('Input.insertText', { text: ` Synthetic medication ${name} ` });
+    await evaluate(`${medicationEditDialog}.querySelector('input[name="dosage"]').focus()`);
+    await evaluate(`${medicationEditDialog}.querySelector('input[name="dosage"]').select()`);
+    await send('Input.insertText', { text: ` ${dosage} updated ` });
+    medicationUpdateStatus = 500;
+    await evaluate(`${medicationEditDialog}.querySelector('button[type="submit"]').click()`);
+    await check(`${medicationEditDialog}.querySelector('button[type="submit"]').disabled`, 'medication save disabled during PATCH');
+    await check(`${medicationEditDialog}.textContent.includes('Synthetic medication update denied') && ${medicationEditDialog}.querySelector('input[name="name"]').value.trim() === 'Synthetic medication ${name}'`, 'failed medication update preserves form for retry');
+    medicationUpdateStatus = 200;
+    await evaluate(`{ const button = ${medicationEditDialog}.querySelector('button[type="submit"]'); button.click(); button.click(); }`);
+    await check(`!${medicationEditDialog} && document.querySelector('main').textContent.includes('updated successfully') && document.querySelector('main').textContent.includes('${dosage} updated')`, 'successful medication update closes dialog and refreshes values');
+    assert.equal(medicationUpdates.length, beforeUpdate + 2);
+    assert.deepEqual(medicationUpdates.at(-1), { path: `/api/Medications/my/${id}`, values: { name: `Synthetic medication ${name}`, dosage: `${dosage} updated`, frequency } });
+  }
+  const medicationDialog = `document.querySelector('[role="dialog"][aria-labelledby="delete-medication-title"]')`;
+  await evaluate(`document.querySelector('button[aria-label="Delete Synthetic medication A"]').click()`);
+  await check(`${medicationDialog}?.textContent.includes('Are you sure you want to delete this medication?')`, 'medication confirmation opens');
+  await evaluate(`[...${medicationDialog}.querySelectorAll('button')].find(button => button.textContent === 'Cancel').click()`);
+  await check(`!${medicationDialog}`, 'medication cancellation closes dialog');
+  assert.equal(medicationDeletes.length, 0);
+  medicationDeleteStatus = 500;
+  await evaluate(`document.querySelector('button[aria-label="Delete Synthetic medication B"]').click()`);
+  await evaluate(`[...${medicationDialog}.querySelectorAll('button')].find(button => button.textContent === 'Delete').click()`);
+  await check(`${medicationDialog}?.textContent.includes('Synthetic medication deletion denied') && !!document.querySelector('button[aria-label="Delete Synthetic medication B"]')`, 'failed medication deletion keeps dialog and item');
+  medicationDeleteStatus = 204;
+  await evaluate(`{ const button = [...${medicationDialog}.querySelectorAll('button')].find(button => button.textContent === 'Delete'); button.click(); button.click(); }`);
+  await check(`${medicationDialog}?.querySelector('button:last-child')?.disabled`, 'medication confirmation disables while pending');
+  await check(`!${medicationDialog} && !document.querySelector('button[aria-label="Delete Synthetic medication B"]') && document.querySelector('main').textContent.includes('deleted successfully')`, 'empty DELETE success refreshes medications automatically');
+  assert.deepEqual(medicationDeletes, [{ path: '/api/Medications/my/8402', hasBody: false }, { path: '/api/Medications/my/8402', hasBody: false }]);
+  await fillField('name', 'Synthetic medication C');
+  await fillField('dosage', 'Prescription C');
+  await fillField('frequency', 'Instructions C');
+  await evaluate(`document.querySelector('main button[type="submit"]').click()`);
+  await check(`!!document.querySelector('button[aria-label="Delete Synthetic medication C"]') && document.querySelector('input[name="name"]').value === ''`, 'existing add medication still resets and refreshes GET');
+  await evaluate(`document.querySelector('button[aria-label="Delete Synthetic medication A"]').click()`);
+  await evaluate(`[...${medicationDialog}.querySelectorAll('button')].find(button => button.textContent === 'Delete').click()`);
+  await check(`!${medicationDialog} && !document.querySelector('button[aria-label="Delete Synthetic medication A"]')`, 'another medication deletes using its own ID');
+  assert.equal(medicationDeletes.at(-1).path, '/api/Medications/my/7301');
   await spa('/patient/readings');
   await check(`document.querySelector('main h2')?.textContent==='Health Readings'`, 'patient nested Outlet remains functional');
   const historySection = `document.querySelector('[aria-labelledby="reading-history-title"]')`;

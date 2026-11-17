@@ -48,3 +48,65 @@ This is an existing React application. Work within its current architecture and 
 - Explain significant decisions and any conflict with existing conventions.
 - If a request is ambiguous and could affect important behavior, ask a focused question before implementing.
 - When the user requests a specific change, implement it directly within the authorized scope and report the result concisely.
+
+
+## Simple Coding Style & API Hooks
+
+The developer prefers simple, readable, beginner-friendly React code.
+
+Prioritize clarity and simplicity over advanced abstractions or overly complex architecture.
+
+### API Integration
+
+- Create a separate custom hook for each API operation when appropriate.
+- Use `useQuery` for GET requests.
+- Use `useMutation` for POST, PATCH, PUT, and DELETE requests.
+- Use the existing authenticated Axios instance for API calls.
+- Keep API requests inside custom hooks instead of writing them directly in UI components.
+- Use `queryClient.invalidateQueries()` after successful mutations when related cached data needs to be refreshed.
+- Follow the existing React Query query-key conventions.
+- Avoid unnecessary custom wrappers around React Query or Axios.
+- Do not create extra API service layers unless they already exist or are genuinely needed.
+
+### Component Structure
+
+- Keep UI components separate from API hooks.
+- Use Material UI for all UI elements.
+- Use `useState` for simple local component state.
+- Use Zustand only when shared/global state is actually necessary.
+- Use React Hook Form with Yup for forms.
+- Keep event handlers simple and easy to understand.
+- Avoid deeply nested functions and unnecessary helper functions.
+- Prefer straightforward, readable JSX.
+
+### Code Simplicity
+
+- Write the simplest correct implementation that satisfies the requirements.
+- Avoid overengineering.
+- Avoid unnecessary abstractions, generic utilities, factories, and complex design patterns.
+- Do not create extra files or functions without a clear purpose.
+- Prefer standard React and React Query features over custom solutions.
+- Avoid unnecessary `useEffect`, `useMemo`, and `useCallback` usage.
+- Do not introduce additional libraries when existing ones can handle the task.
+- Use clear, descriptive variable and function names.
+- Keep code easy for a React developer to read, debug, and modify.
+
+### Important
+
+Simplicity must not compromise functionality, security, or correctness.
+
+Keep essential error handling, validation, authentication, and cleanup logic.
+
+For complex features such as SignalR, use the simplest reliable implementation while preserving correct connection lifecycle, event subscriptions, and cleanup.
+
+Do not rewrite existing working code solely to make it follow these preferences. Apply these guidelines to new code and relevant modifications.
+
+### Code Explanation
+
+After implementing a feature:
+
+1. Briefly explain the purpose of each new or modified file.
+2. Explain how the custom hooks connect to the UI components.
+3. Mention which React Query hooks and query keys were used.
+4. Keep explanations clear and beginner-friendly.
+5. Avoid unnecessary technical jargon.
