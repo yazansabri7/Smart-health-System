@@ -72,6 +72,23 @@ const medicationDeletes = [];
 let medicationDeleteStatus = 204;
 const medicationUpdates = [];
 let medicationUpdateStatus = 200;
+let availableDoctors = [
+  { id: 4301, doctorName: 'Synthetic Doctor A', specialization: null, profileImage: null, isAvailable: true, patientCount: 0 },
+  { id: 8702, doctorName: 'Synthetic Doctor B', specialization: 'Synthetic specialty', profileImage: null, isAvailable: true, patientCount: 3 },
+];
+let doctorsStatus = 200;
+let doctorLinkStatus = 204;
+let doctorsRequests = 0;
+const doctorLinks = [];
+let notificationItems = [
+  { id: 6101, type: 77, title: 'Synthetic notice one', message: 'Synthetic general notification', isRead: false, createdAt: '2026-11-23T17:58:13' },
+  { id: 6202, type: 78, title: 'Synthetic notice two', message: 'Synthetic second notification', isRead: false, createdAt: '2026-11-23T18:00:00' },
+];
+let notificationGetStatus = 200;
+let notificationPatchStatus = 204;
+let notificationGets = 0;
+let notificationCountGets = 0;
+const notificationPatches = [];
 let deleteMessage = 'Synthetic deletion denied';
 let readingStatus = 200;
 let historyStatus = 200;
@@ -149,6 +166,70 @@ try {
     await evaluate(`document.querySelector(${JSON.stringify(selector)}).focus()`);
     await send('Input.insertText', { text: String(value) });
   }
+  async function testNotificationBell(role) {
+    const dropdown = `document.querySelector('#notification-menu')`;
+    const first = notificationItems[0];
+    const beforeOpen = notificationPatches.length;
+    const beforeGet = notificationGets;
+    await check(`document.querySelector('[aria-label="Notifications"] .MuiBadge-badge')?.textContent === '2'`, `${role}: bell displays unread count`);
+    await check(`(() => {
+      const bell = document.querySelector('[aria-label="Notifications"]');
+      const badge = bell.querySelector('.MuiBadge-badge');
+      const icon = bell.querySelector('.material-symbols-outlined').getBoundingClientRect();
+      const badgeRect = badge.getBoundingClientRect();
+      return badge.classList.contains('MuiBadge-colorError') && !badge.classList.contains('MuiBadge-invisible')
+        && getComputedStyle(bell).overflow === 'visible' && getComputedStyle(badge.parentElement).overflow === 'visible'
+        && badgeRect.x + badgeRect.width / 2 > icon.x + icon.width / 2
+        && badgeRect.y + badgeRect.height / 2 < icon.y + icon.height / 2;
+    })()`, `${role}: red badge is visible at top-right without clipping`);
+    const countBeforeOpen = notificationCountGets;
+    await evaluate(`document.querySelector('[aria-label="Notifications"]').click()`);
+    await check(`!!document.querySelector('[aria-label="Loading notifications"]')`, `${role}: notification list loading indicator`);
+    await check(`${dropdown}?.textContent.includes('${first.title}') && ${dropdown}.textContent.includes('Synthetic general notification')`, `${role}: notification dropdown loads confirmed nested items`);
+    assert.equal(notificationGets, beforeGet + 1);
+    assert.equal(notificationCountGets, countBeforeOpen + 1, 'opening dropdown refreshes unread count');
+    assert.equal(notificationPatches.length, beforeOpen, 'opening dropdown does not mark notifications read');
+    const firstButton = `document.querySelector('[aria-label="Unread: ${first.title}"]')`;
+    notificationPatchStatus = 500;
+    const countBeforeFailure = notificationCountGets;
+    await evaluate(`${firstButton}.click()`);
+    await check(`${dropdown}.textContent.includes('Synthetic notification update denied') && !!${firstButton}`, `${role}: failed read preserves unread notification`);
+    assert.equal(notificationCountGets, countBeforeFailure, 'failed mutation does not refresh count');
+    notificationPatchStatus = 204;
+    const countBeforeSuccess = notificationCountGets;
+    await evaluate(`{ const button = ${firstButton}; button.click(); button.click(); }`);
+    await check(`!!document.querySelector('[aria-label="${first.title}"]') && document.querySelector('[aria-label="Notifications"] .MuiBadge-badge')?.textContent === '1'`, `${role}: read refreshes list and unread count`);
+    assert.equal(notificationCountGets, countBeforeSuccess + 1);
+    assert.deepEqual(notificationPatches.slice(beforeOpen), [`/api/Notifications/${first.id}/read`, `/api/Notifications/${first.id}/read`]);
+    const afterRead = notificationPatches.length;
+    await evaluate(`document.querySelector('[aria-label="${first.title}"]').click()`);
+    await delay(100);
+    assert.equal(notificationPatches.length, afterRead, 'already-read item sends no PATCH');
+    await evaluate(`[...${dropdown}.querySelectorAll('button')].find(button => button.textContent.includes('Mark all as read')).click()`);
+    await check(`[...${dropdown}.querySelectorAll('button')].find(button => button.textContent.includes('Mark all as read')).disabled`, `${role}: mark all prevents duplicate submission`);
+    await check(`!${dropdown}.querySelector('[aria-label^="Unread: "]') && document.querySelector('[aria-label="Notifications"] .MuiBadge-badge')?.classList.contains('MuiBadge-invisible')`, `${role}: mark all clears unread badge`);
+    assert.equal(notificationPatches.at(-1), '/api/Notifications/read-all');
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape' });
+    await check(`!${dropdown}`, `${role}: dropdown closes with Escape`);
+    notificationGetStatus = 500;
+    await evaluate(`document.querySelector('[aria-label="Notifications"]').click()`);
+    await check(`${dropdown}?.textContent.includes('Unable to load notifications.')`, `${role}: reopening refetches and displays GET errors`);
+    notificationGetStatus = 200;
+    notificationItems = [];
+    await evaluate(`[...${dropdown}.querySelectorAll('button')].find(button => button.textContent === 'Retry').click()`);
+    await check(`${dropdown}.textContent.includes('No notifications yet')`, `${role}: empty notification list`);
+    await send('Emulation.setDeviceMetricsOverride', { width: 320, height: 900, deviceScaleFactor: 1, mobile: false });
+    await check(`${dropdown}.getBoundingClientRect().right <= innerWidth && ${dropdown}.getBoundingClientRect().left >= 0`, `${role}: dropdown fits mobile viewport`);
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape' });
+    await check(`!${dropdown}`, `${role}: empty dropdown closes`);
+    const closedGets = notificationGets;
+    await delay(350);
+    assert.equal(notificationGets, closedGets, 'no full-list polling while closed');
+    await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+    await check(`!!document.querySelector('nav')`, `${role}: desktop navigation restores after mobile notification test`);
+  }
   async function selectOption(name, value) {
     await evaluate(`document.querySelector('input[name="${name}"]').closest('.MuiInputBase-root').querySelector('[role="combobox"]').dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))`);
     await check(`!!document.querySelector('[role="option"][data-value="${value}"]')`, `${name} options available`);
@@ -196,8 +277,8 @@ try {
         chatRestRequests.push(url.pathname);
         const isDoctor = url.pathname.startsWith('/api/Doctor/');
         const conversations = isDoctor
-          ? [{ id: 301, doctorId: 37, patientId: 42, createdAt: '2026-11-14T10:00:00' }, { id: 808, doctorId: 37, patientId: 91, createdAt: '2026-11-14T11:00:00' }]
-          : [{ id: 701, doctorId: 37, patientId: 27, createdAt: '2026-11-14T10:00:00' }, { id: 902, doctorId: 88, patientId: 27, createdAt: '2026-11-14T11:00:00' }];
+          ? [{ id: 301, doctorId: 37, patientId: 42, fullName: 'Synthetic Patient Name', createdAt: '2026-11-14T10:00:00' }, { id: 808, doctorId: 37, patientId: 91, fullName: '   ', createdAt: '2026-11-14T11:00:00' }]
+          : [{ id: 701, doctorId: 37, patientId: 27, fullName: 'Synthetic Doctor Name', createdAt: '2026-11-14T10:00:00' }, { id: 902, doctorId: 88, patientId: 27, fullName: null, createdAt: '2026-11-14T11:00:00' }];
         let data = url.pathname.endsWith('/Chat') ? conversations
           : (isDoctor ? doctorHistory : chatHistory)[Number(url.pathname.split('/').at(-2))];
         if (url.pathname.endsWith('/Messages')) {
@@ -218,6 +299,50 @@ try {
       if (url.pathname.endsWith('/Synthetic401') || url.pathname.endsWith('/Synthetic403')) {
         const status = url.pathname.endsWith('/Synthetic401') ? 401 : 403;
         await send('Fetch.fulfillRequest',{requestId,responseCode:status,responseHeaders:headers,body:Buffer.from('{}').toString('base64')});
+        return;
+      }
+      if (/^\/api\/Notifications(?:\/unread-count|\/read-all|\/\d+\/read)?$/.test(url.pathname)) {
+        assert.ok(request.headers.Authorization?.startsWith('Bearer '));
+        let status = 200;
+        let body;
+        if (request.method === 'PATCH') {
+          assert.equal(request.postData, undefined);
+          notificationPatches.push(url.pathname);
+          await delay(200);
+          status = notificationPatchStatus;
+          if (status === 204) notificationItems = notificationItems.map(item => url.pathname.endsWith('/read-all') || item.id === Number(url.pathname.split('/').at(-2)) ? { ...item, isRead: true } : item);
+          else body = { message: 'Synthetic notification update denied' };
+        } else if (url.pathname.endsWith('/unread-count')) {
+          notificationCountGets++;
+          body = { success: true, data: notificationItems.filter(item => !item.isRead).length };
+        } else {
+          notificationGets++;
+          status = notificationGetStatus;
+          body = { success: status === 200, data: { items: notificationItems, hasMore: false, nextCursor: null } };
+          await delay(200);
+        }
+        await send('Fetch.fulfillRequest', { requestId, responseCode: status, responseHeaders: headers,
+          ...(body ? { body: Buffer.from(JSON.stringify(body)).toString('base64') } : {}) });
+        return;
+      }
+      if (url.pathname === '/api/Patient/Patient/AvailableDoctors') {
+        assert.equal(request.method, 'GET');
+        assert.ok(request.headers.Authorization?.startsWith('Bearer '));
+        doctorsRequests++;
+        await delay(200);
+        await send('Fetch.fulfillRequest', { requestId, responseCode: doctorsStatus, responseHeaders: headers,
+          body: Buffer.from(JSON.stringify(doctorsStatus === 200 ? availableDoctors : { message: 'Synthetic doctors unavailable' })).toString('base64') });
+        return;
+      }
+      if (/^\/api\/Patient\/DoctorPatient\/\d+$/.test(url.pathname)) {
+        assert.equal(request.method, 'POST');
+        assert.ok(request.headers.Authorization?.startsWith('Bearer '));
+        assert.equal(request.postData, undefined);
+        doctorLinks.push(url.pathname);
+        await delay(250);
+        if (doctorLinkStatus === 204) availableDoctors = availableDoctors.filter(doctor => doctor.id !== Number(url.pathname.split('/').at(-1)));
+        await send('Fetch.fulfillRequest', { requestId, responseCode: doctorLinkStatus, responseHeaders: headers,
+          ...(doctorLinkStatus === 204 ? {} : { body: Buffer.from(JSON.stringify({ message: 'Synthetic doctor link denied' })).toString('base64') }) });
         return;
       }
       if (/^\/api\/Medications\/my(?:\/\d+)?$/.test(url.pathname)) {
@@ -392,6 +517,26 @@ try {
     await evaluate(`document.querySelector('nav a[href="${route}"]').click()`);
     await check(`document.querySelector('h1').textContent === ${JSON.stringify(title)} && document.querySelectorAll('nav a.active').length === 1 && document.querySelector('nav a.active').getAttribute('href') === '${route}'`, `${route}: title and active navigation`);
   }
+  await testNotificationBell('Patient');
+  await check(`document.querySelector('nav a[href="/patient/available-doctors"]').nextElementSibling?.getAttribute('href') === '/patient/doctors'`, 'Available Doctors sidebar item appears directly above My Doctors');
+  await evaluate(`document.querySelector('nav a[href="/patient/available-doctors"]').click()`);
+  await check(`document.querySelector('h1')?.textContent === 'Available Doctors' && document.querySelector('nav a.active')?.getAttribute('href') === '/patient/available-doctors'`, 'Available Doctors uses patient layout and active navigation');
+  await check(`document.querySelectorAll('main button[aria-label^="Add doctor"]').length === 2 && document.querySelector('main').textContent.includes('Synthetic specialty') && !/undefined|null/.test(document.querySelector('main').textContent)`, 'direct doctor array renders and nullable fields are safe');
+  doctorLinkStatus = 500;
+  await evaluate(`document.querySelector('button[aria-label="Add doctor Synthetic Doctor B"]').click()`);
+  await check(`document.querySelector('main').textContent.includes('Synthetic doctor link denied')`, 'doctor link failure displays backend error');
+  doctorLinkStatus = 204;
+  const beforeDoctors = doctorsRequests;
+  await evaluate(`{ const button = document.querySelector('button[aria-label="Add doctor Synthetic Doctor B"]'); button.click(); button.click(); }`);
+  await check(`document.querySelector('button[aria-label="Add doctor Synthetic Doctor B"]')?.disabled`, 'doctor linking disables duplicate submission');
+  await check(`document.querySelector('main').textContent.includes('Doctor added successfully.') && !document.querySelector('button[aria-label="Add doctor Synthetic Doctor B"]')`, 'doctor link success refetches Available Doctors');
+  assert.equal(doctorsRequests, beforeDoctors + 1);
+  assert.deepEqual(doctorLinks, ['/api/Patient/DoctorPatient/8702', '/api/Patient/DoctorPatient/8702']);
+  await evaluate(`document.querySelector('button[aria-label="Add doctor Synthetic Doctor A"]').click()`);
+  await check(`document.querySelector('main').textContent.includes('No doctors available yet.')`, 'linking another dynamic doctor ID refreshes empty list');
+  assert.equal(doctorLinks.at(-1), '/api/Patient/DoctorPatient/4301');
+  await evaluate(`document.querySelector('nav a[href="/patient/doctors"]').click()`);
+  await check(`document.querySelector('main h2')?.textContent === 'My Doctors' && !document.querySelector('main').textContent.includes('Synthetic Doctor')`, 'My Doctors remains separate');
   await spa('/patient/medications');
   await check(`document.querySelectorAll('main button[aria-label^="Delete Synthetic medication"]').length === 2`, 'each medication has a delete button');
   const medicationEditDialog = `document.querySelector('[role="dialog"][aria-labelledby="edit-medication-title"]')`;
@@ -810,13 +955,14 @@ try {
   chatRestRequests = [];
   await spa('/patient/messages');
   await send('Emulation.setFocusEmulationEnabled', { enabled: true });
-  await check(`!!window.__chatTest && document.querySelector('main').textContent.includes('Connected') && document.querySelector('main').textContent.includes('Doctor #37')`, 'chat connects and loads real conversation IDs');
+  await check(`!!window.__chatTest && document.querySelector('main').textContent.includes('Connected') && document.querySelector('main').textContent.includes('Synthetic Doctor Name') && !document.querySelector('main').textContent.includes('Doctor #')`, 'Patient chat list shows other participant fullName');
   assert.equal(await evaluate('window.__chatTest.hubUrl'), 'https://chatsystem.runasp.net/hubs/chat');
   assert.equal(await evaluate('window.__chatTest.tokenPresent && window.__chatTest.automaticReconnect'), true);
   assert.equal(await evaluate('window.__chatTest.starts'), 1, 'StrictMode starts one connection');
   assert.deepEqual(chatRestRequests, ['/api/Patient/Chat'], 'history waits for a selected conversation');
   chatHistoryDelay = 600;
-  await evaluate(`[...document.querySelectorAll('main [role="button"]')].find(button => button.textContent === 'Doctor #37').click()`);
+  await evaluate(`[...document.querySelectorAll('main [role="button"]')].find(button => button.textContent === 'Synthetic Doctor Name').click()`);
+  await check(`[...document.querySelectorAll('main h3')].some(heading => heading.textContent === 'Synthetic Doctor Name')`, 'Patient conversation header shows fullName');
   await until(() => chatRestRequests.includes('/api/Patient/Chat/701/Messages'), 'dynamic message history endpoint');
   await evaluate(`window.__chatTest.emit({ id: 103, chatId: 701, senderId: 'b1234567-1234-5678-abcd-123456789abc', content: 'Arrived during history', createdAt: '2026-11-14T11:00:00Z', isRead: false })`);
   await evaluate(`window.__chatTest.receipt({ chatId: 701, readAt: '2026-11-14T18:00:00Z' })`);
@@ -877,7 +1023,8 @@ try {
   await check(`document.querySelector('[role="log"]').textContent.includes('Recovered after reconnect')`, 'reconnect recovers missed history');
   await check(`[...document.querySelectorAll('[role="log"] p')].find(element => element.textContent === 'Synthetic new message').parentElement.querySelector('[aria-label="Read"]') != null`, 'history refetch cannot downgrade read messages');
   assert.equal(chatRestRequests.filter(path => path.endsWith('/701/Messages')).length, historyBeforeReconnect + 1);
-  await evaluate(`[...document.querySelectorAll('main [role="button"]')].find(button => button.textContent === 'Doctor #88').click()`);
+  await evaluate(`[...document.querySelectorAll('main [role="button"]')].find(button => button.textContent === 'Doctor').click()`);
+  await check(`[...document.querySelectorAll('main h3')].some(heading => heading.textContent === 'Doctor')`, 'Patient chat uses Doctor fallback for null fullName');
   await check(`document.querySelector('[role="log"]').textContent.includes('No messages yet.') && !document.querySelector('[role="log"]').textContent.includes('Earlier own message')`, 'switching conversations isolates messages and supports empty history');
   await delay(400);
   const marksBeforeInactive = await evaluate('window.__chatTest.readCalls.length');
@@ -892,15 +1039,21 @@ try {
   }
   await evaluate(`import('/src/auth/session.js').then(({ authSession }) => authSession.logout())`);
   await check(`location.pathname === '/login' && window.__chatTest.stops >= 1 && !document.querySelector('[role="log"]')`, 'logout stops SignalR and removes patient messages');
+  notificationItems = [
+    { id: 7101, title: 'Doctor notice one', message: 'Synthetic general notification', isRead: false, createdAt: '2026-11-23T17:58:13' },
+    { id: 7202, title: 'Doctor notice two', message: 'Synthetic second notification', isRead: false, createdAt: '2026-11-23T18:00:00' },
+  ];
   await login('Doctor', { 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier': 'd1234567-1234-5678-abcd-123456789abc' });
+  await testNotificationBell('Doctor');
   chatRestRequests = [];
   await evaluate(`document.querySelector('nav a[href="/doctor/messages"]').click()`);
-  await check(`location.pathname === '/doctor/messages' && document.querySelector('h1').textContent === 'Messages' && document.querySelector('main').textContent.includes('Connected') && document.querySelector('main').textContent.includes('Patient #42')`, 'Doctor navigation loads shared chat with patient fallbacks');
+  await check(`location.pathname === '/doctor/messages' && document.querySelector('h1').textContent === 'Messages' && document.querySelector('main').textContent.includes('Connected') && document.querySelector('main').textContent.includes('Synthetic Patient Name') && !document.querySelector('main').textContent.includes('Patient #')`, 'Doctor chat list shows other participant fullName');
   assert.deepEqual(chatRestRequests, ['/api/Doctor/Chat'], 'Doctor fetches only its conversation endpoint before selection');
   assert.equal(await evaluate('window.__chatTest.tokenPresent'), true, 'Doctor hub uses authenticated session token');
   await evaluate(`window.__chatTest.senderId = 'd1234567-1234-5678-abcd-123456789abc'`);
-  for (const [chatId, patientId] of [[301, 42], [808, 91]]) {
-    await evaluate(`[...document.querySelectorAll('main [role="button"]')].find(button => button.textContent === 'Patient #${patientId}').click()`);
+  for (const [chatId, participantName] of [[301, 'Synthetic Patient Name'], [808, 'Patient']]) {
+    await evaluate(`[...document.querySelectorAll('main [role="button"]')].find(button => button.textContent === '${participantName}').click()`);
+    await check(`[...document.querySelectorAll('main h3')].some(heading => heading.textContent === '${participantName}')`, 'Doctor conversation header shows fullName or Patient fallback');
     await until(() => chatRestRequests.includes(`/api/Doctor/Chat/${chatId}/Messages`), 'Doctor fetches the selected dynamic chat ID');
     if (chatId === 301) {
       await check(`document.querySelector('[role="log"]').textContent.includes('Doctor historical reply') && !document.querySelector('[role="log"]').textContent.includes('Earlier own message')`, 'Doctor history remains isolated from Patient cache');
