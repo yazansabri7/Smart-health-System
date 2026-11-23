@@ -13,6 +13,7 @@ import {
 } from '@mui/material';
 import { Link } from 'react-router-dom';
 import MaterialIcon from '../layout/MaterialIcon';
+import NotificationBell from './NotificationBell.jsx';
 
 export default function Navbar({
   title,
@@ -74,19 +75,23 @@ export default function Navbar({
             <MaterialIcon name={modeIcon} />
           </IconButton>
         </Tooltip>
-        <Tooltip title="Notifications">
-          <IconButton
-            aria-label="Notifications"
-            aria-haspopup="menu"
-            aria-controls={notificationAnchor ? 'notification-menu' : undefined}
-            onClick={openNotifications}
-          >
-            <MaterialIcon name="notifications" />
-          </IconButton>
-        </Tooltip>
-        <Menu id="notification-menu" anchorEl={notificationAnchor} open={Boolean(notificationAnchor)} onClose={closeNotifications}>
-          <MenuItem disabled>Notifications are not connected yet</MenuItem>
-        </Menu>
+        {role === 'Patient' || role === 'Doctor' ? <NotificationBell /> : (
+          <>
+            <Tooltip title="Notifications">
+              <IconButton
+                aria-label="Notifications"
+                aria-haspopup="menu"
+                aria-controls={notificationAnchor ? 'notification-menu' : undefined}
+                onClick={openNotifications}
+              >
+                <MaterialIcon name="notifications" />
+              </IconButton>
+            </Tooltip>
+            <Menu id="notification-menu" anchorEl={notificationAnchor} open={Boolean(notificationAnchor)} onClose={closeNotifications}>
+              <MenuItem disabled>Notifications are not connected yet</MenuItem>
+            </Menu>
+          </>
+        )}
         <Tooltip title="Account menu">
           <IconButton
             aria-label="Account menu"

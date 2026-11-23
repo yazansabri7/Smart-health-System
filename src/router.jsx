@@ -15,6 +15,7 @@ import ProtectedRoute from './auth/ProtectedRoute';
 import HealthReadings from './pages/readings/HealthReadings';
 import ChatPage from './pages/chat/ChatPage.jsx';
 import Medications from './pages/medications/Medications.jsx';
+import AvailableDoctors from './pages/doctors/AvailableDoctors.jsx';
 
 const router = createBrowserRouter([
   {
@@ -42,6 +43,7 @@ const router = createBrowserRouter([
           { index: true, element: <DashboardPlaceholder title="Dashboard" icon="dashboard" role="Patient" /> },
           { path: 'readings', element: <HealthReadings /> },
           { path: 'medications', element: <Medications /> },
+          { path: 'available-doctors', element: <AvailableDoctors /> },
           { path: 'doctors', element: <DashboardPlaceholder title="My Doctors" icon="medical_services" role="Patient" /> },
           { path: 'messages', element: <ChatPage role="Patient" /> },
           { path: 'alerts', element: <DashboardPlaceholder title="Alerts" icon="notifications" role="Patient" /> },

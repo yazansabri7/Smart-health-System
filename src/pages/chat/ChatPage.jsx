@@ -13,7 +13,10 @@ function ChatWorkspace({ currentUserId, role }) {
   const [selectedId, setSelectedId] = useState(null);
   const availableChats = (chats.data || []).filter(chat => Number.isSafeInteger(chat.id) && chat.id > 0);
   const selectedChat = availableChats.find(chat => chat.id === selectedId);
-  const conversationTitle = chat => role === 'Doctor' ? `Patient #${chat.patientId}` : `Doctor #${chat.doctorId}`;
+  const conversationTitle = chat => {
+    const fullName = typeof chat.fullName === 'string' ? chat.fullName.trim() : '';
+    return fullName || (role === 'Doctor' ? 'Patient' : 'Doctor');
+  };
 
   return (
     <Box>
